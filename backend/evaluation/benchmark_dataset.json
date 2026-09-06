@@ -1,0 +1,62 @@
+[
+    {
+        "question": "What is overfitting in machine learning?",
+        "ground_truth": "Overfitting occurs when a machine learning model learns the noise and specific patterns of the training data too well, resulting in poor generalization to unseen data. It typically happens when a model is too complex relative to the amount of training data.",
+        "expected_contexts": ["Overfitting is a modeling error that occurs when a function corresponds too closely to a particular set of data points."]
+    },
+    {
+        "question": "What is the difference between precision and recall?",
+        "ground_truth": "Precision measures the proportion of positive predictions that are actually correct (TP / (TP + FP)), while recall measures the proportion of actual positives that are correctly identified (TP / (TP + FN)). There is often a trade-off between the two.",
+        "expected_contexts": ["Precision is the fraction of relevant instances among the retrieved instances. Recall is the fraction of relevant instances that were retrieved."]
+    },
+    {
+        "question": "Explain the attention mechanism in transformers.",
+        "ground_truth": "The attention mechanism allows a model to weigh the importance of different parts of the input when producing each part of the output. In transformers, self-attention computes relevance scores between all pairs of positions in a sequence using query, key, and value vectors.",
+        "expected_contexts": ["Attention mechanisms allow neural networks to focus on specific parts of the input sequence when generating output."]
+    },
+    {
+        "question": "What is gradient descent?",
+        "ground_truth": "Gradient descent is an iterative optimization algorithm used to minimize a loss function by updating model parameters in the direction of the negative gradient. Variants include stochastic gradient descent (SGD), mini-batch GD, and optimizers like Adam.",
+        "expected_contexts": ["Gradient descent is a first-order iterative optimization algorithm for finding a local minimum of a differentiable function."]
+    },
+    {
+        "question": "What are the advantages of using RAG over fine-tuning?",
+        "ground_truth": "RAG (Retrieval-Augmented Generation) provides several advantages over fine-tuning: it can use up-to-date information without retraining, provides traceable citations, reduces hallucination by grounding responses in retrieved evidence, and is more cost-effective for domain-specific knowledge.",
+        "expected_contexts": ["Retrieval-augmented generation combines retrieval with generation to produce grounded, up-to-date answers."]
+    },
+    {
+        "question": "What is a knowledge graph?",
+        "ground_truth": "A knowledge graph is a structured representation of information using entities as nodes and relationships as edges. It captures real-world facts like 'Apple (Organization) HEADQUARTERED_IN Cupertino (Location)' and enables multi-hop reasoning over connected entities.",
+        "expected_contexts": ["A knowledge graph represents facts about entities and their relationships in a graph structure."]
+    },
+    {
+        "question": "How does BM25 differ from vector search?",
+        "ground_truth": "BM25 is a keyword-based ranking function that scores documents based on exact term frequency and inverse document frequency. Vector search uses dense embeddings to capture semantic similarity. BM25 excels at exact keyword matching while vector search handles synonyms and paraphrases better.",
+        "expected_contexts": ["BM25 is a bag-of-words retrieval function that ranks documents based on query term frequency."]
+    },
+    {
+        "question": "What is cross-encoder reranking?",
+        "ground_truth": "Cross-encoder reranking is a technique where a model jointly processes the query and each candidate document pair to produce a fine-grained relevance score. Unlike bi-encoders which encode query and document separately, cross-encoders see both together, yielding more accurate relevance assessment at the cost of being slower.",
+        "expected_contexts": ["A cross-encoder takes a pair of texts as input and directly outputs a similarity score."]
+    },
+    {
+        "question": "What is the total revenue for Q3?",
+        "ground_truth": "This question requires exact computation from structured tabular data and should be routed to the Pandas agent for precise calculation.",
+        "expected_contexts": ["Structured data questions require exact computation rather than semantic retrieval."]
+    },
+    {
+        "question": "Compare the architectures described in Document A and Document B.",
+        "ground_truth": "This is a multi-document comparison question that requires retrieving information from multiple sources and synthesizing a comparative analysis.",
+        "expected_contexts": ["Multi-document comparison requires cross-document reasoning and evidence fusion."]
+    },
+    {
+        "question": "What is the relationship between Entity X and Entity Y mentioned in the report?",
+        "ground_truth": "This is a relationship question that benefits from knowledge graph retrieval to find entity connections across documents.",
+        "expected_contexts": ["Knowledge graphs store entity relationships that enable multi-hop reasoning."]
+    },
+    {
+        "question": "Explain the concept of transfer learning.",
+        "ground_truth": "Transfer learning is a machine learning technique where a model trained on one task is repurposed for a second related task. Pre-trained models like BERT and GPT use transfer learning to apply knowledge learned from large corpora to specific downstream tasks, significantly reducing the data and compute needed for training.",
+        "expected_contexts": ["Transfer learning leverages knowledge from previously learned tasks to improve performance on new tasks."]
+    }
+]

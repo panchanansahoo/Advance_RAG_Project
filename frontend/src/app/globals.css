@@ -1,0 +1,73 @@
+@import "tailwindcss";
+
+@theme {
+  --color-background: #0f172a;
+  --color-foreground: #f8fafc;
+  
+  --color-primary: #3b82f6;
+  --color-primary-hover: #2563eb;
+  
+  --color-surface: rgba(30, 41, 59, 0.7);
+  --color-surface-border: rgba(255, 255, 255, 0.1);
+}
+
+@layer base {
+  :root {
+    --background: #0f172a;
+    --foreground: #f8fafc;
+  }
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    min-height: 100vh;
+    background-image: 
+      radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.15) 0px, transparent 50%),
+      radial-gradient(at 100% 100%, rgba(139, 92, 246, 0.15) 0px, transparent 50%);
+    background-attachment: fixed;
+  }
+}
+
+@layer components {
+  .glass-panel {
+    @apply bg-slate-800/60 backdrop-blur-md border border-slate-700/50 rounded-2xl shadow-xl;
+  }
+  
+  .glass-button {
+    @apply px-4 py-2 bg-blue-600/80 hover:bg-blue-500 text-white font-medium rounded-lg transition-all 
+           border border-blue-500/50 shadow-lg hover:shadow-blue-500/25 active:scale-95;
+  }
+  
+  .glass-input {
+    @apply w-full bg-slate-900/50 border border-slate-700 text-slate-100 rounded-xl px-4 py-3 
+           focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all;
+  }
+  
+  .message-user {
+    @apply backdrop-blur-md border shadow-xl bg-blue-900/30 border-blue-800/50 ml-auto max-w-[80%] rounded-2xl rounded-tr-sm;
+  }
+  
+  .message-bot {
+    @apply backdrop-blur-md border border-slate-700/50 shadow-xl bg-slate-800/80 mr-auto max-w-[85%] rounded-2xl rounded-tl-sm;
+  }
+
+  .markdown-body h3 {
+    @apply text-lg font-semibold mt-4 mb-2 text-blue-300;
+  }
+  
+  .markdown-body p {
+    @apply mb-4 leading-relaxed;
+  }
+  
+  .markdown-body ul {
+    @apply list-disc pl-5 mb-4 space-y-1;
+  }
+  
+  .markdown-body code {
+    @apply bg-slate-900 px-1.5 py-0.5 rounded text-sm text-pink-300;
+  }
+
+  .warning-block {
+    @apply my-4 p-4 rounded-lg bg-orange-900/20 border-l-4 border-orange-500 text-orange-200;
+  }
+}
