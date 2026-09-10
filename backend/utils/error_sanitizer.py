@@ -104,7 +104,12 @@ def sanitize_error_message(
         )
 
     # 2. File upload & format errors
-    if "not supported" in lower or "allowed extensions" in lower or "allowed:" in lower:
+    if (
+        ("not supported" in lower and any(f in lower for f in ("file", "extension", "format", "upload", "mime")) and "model" not in lower and "api" not in lower and "version" not in lower)
+        or "allowed extensions" in lower
+        or "allowed:" in lower
+        or "unsupported file" in lower
+    ):
         return (
             "This file type is not supported. Please upload a PDF, Word document (.docx), "
             "Excel spreadsheet (.xlsx, .csv), Markdown (.md), or plain text (.txt) file."

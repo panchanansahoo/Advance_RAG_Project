@@ -52,11 +52,21 @@ def get_embedding_provider() -> BaseEmbeddingProvider:
 
         if not settings.google_api_key:
             raise ValueError("GOOGLE_API_KEY is required for Gemini embeddings")
-        model_name = settings.embedding_model if "embedding" in (settings.embedding_model or "").lower() else "models/text-embedding-004"
+        raw_model = (settings.embedding_model or "").lower()
+        if "gemini-embedding" in raw_model:
+            model_name = "models/gemini-embedding-001"
+            dim = 3072
+        elif "embedding" in raw_model and not raw_model.startswith("all-"):
+            model_name = settings.embedding_model if settings.embedding_model.startswith("models/") else f"models/{settings.embedding_model}"
+            dim = 3072 if "gemini-embedding" in model_name else (settings.embedding_dimension or 768)
+        else:
+            model_name = "models/gemini-embedding-001"
+            dim = 3072
+
         _instance = GeminiEmbeddingProvider(
             api_key=settings.google_api_key,
             model_name=model_name,
-            dimension=settings.embedding_dimension or 768,
+            dimension=dim,
         )
     else:  # default: sentence_transformer
         from backend.embeddings.sentence_transformer import SentenceTransformerProvider

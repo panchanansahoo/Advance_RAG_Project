@@ -53,12 +53,33 @@ class ChromaVectorStore(BaseVectorStore):
             {k: str(v) for k, v in m.items()} for m in metadatas
         ]
 
-        self._collection.upsert(
-            ids=ids,
-            embeddings=embeddings,
-            metadatas=clean_metadatas,
-        )
-        logger.info("Upserted %d vectors to ChromaDB", len(ids))
+        try:
+            self._collection.upsert(
+                ids=ids,
+                embeddings=embeddings,
+                metadatas=clean_metadatas,
+            )
+            logger.info("Upserted %d vectors to ChromaDB", len(ids))
+        except Exception as e:
+            if "dimension" in str(e).lower() or "dimensionality" in str(e).lower():
+                logger.warning("ChromaDB dimension mismatch (%s). Recreating collection '%s'...", e, self._collection.name)
+                client = self._get_client()
+                try:
+                    client.delete_collection(self._collection.name)
+                except Exception:
+                    pass
+                self._collection = client.get_or_create_collection(
+                    name=self._collection.name,
+                    metadata={"hnsw:space": "cosine"},
+                )
+                self._collection.upsert(
+                    ids=ids,
+                    embeddings=embeddings,
+                    metadatas=clean_metadatas,
+                )
+                logger.info("Recreated ChromaDB collection and upserted %d vectors", len(ids))
+            else:
+                raise
 
     async def search(
         self,
@@ -79,11 +100,17 @@ class ChromaVectorStore(BaseVectorStore):
                 {k: v} for k, v in conditions.items()
             ]}
 
-        results = self._collection.query(
-            query_embeddings=[query_embedding],
-            n_results=top_k,
-            where=where_filter,
-        )
+        try:
+            results = self._collection.query(
+                query_embeddings=[query_embedding],
+                n_results=top_k,
+                where=where_filter,
+            )
+        except Exception as e:
+            if "dimension" in str(e).lower() or "dimensionality" in str(e).lower():
+                logger.warning("ChromaDB search dimension mismatch: %s. Returning empty results.", e)
+                return []
+            raise
 
         search_results: List[VectorSearchResult] = []
         if results["ids"] and results["ids"][0]:

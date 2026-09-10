@@ -17,6 +17,8 @@ class GeminiEmbeddingProvider(BaseEmbeddingProvider):
     """Generate embeddings via the Google Gemini Embeddings API."""
 
     _MODEL_DIMS = {
+        "models/gemini-embedding-001": 3072,
+        "gemini-embedding-001": 3072,
         "models/text-embedding-004": 768,
         "text-embedding-004": 768,
         "models/embedding-001": 768,
@@ -26,7 +28,7 @@ class GeminiEmbeddingProvider(BaseEmbeddingProvider):
     def __init__(
         self,
         api_key: str,
-        model_name: str = "models/text-embedding-004",
+        model_name: str = "models/gemini-embedding-001",
         dimension: int | None = None,
     ):
         # Ensure model name has proper prefix if not provided
@@ -34,7 +36,13 @@ class GeminiEmbeddingProvider(BaseEmbeddingProvider):
             model_name = f"models/{model_name}"
 
         self._model_name = model_name
-        self._dimension = dimension or self._MODEL_DIMS.get(model_name, 768)
+        if model_name in self._MODEL_DIMS:
+            self._dimension = self._MODEL_DIMS[model_name]
+        elif dimension is not None and dimension > 0:
+            self._dimension = dimension
+        else:
+            self._dimension = 3072 if "gemini-embedding" in model_name else 768
+
         self._api_key = api_key
         self._configured = False
 
@@ -58,11 +66,30 @@ class GeminiEmbeddingProvider(BaseEmbeddingProvider):
 
         for i in range(0, len(texts), chunk_size):
             chunk = texts[i : i + chunk_size]
-            result = await genai.embed_content_async(
-                model=self._model_name,
-                content=chunk,
-                task_type="retrieval_document",
-            )
+            try:
+                result = await genai.embed_content_async(
+                    model=self._model_name,
+                    content=chunk,
+                    task_type="retrieval_document",
+                )
+            except Exception as exc:
+                err_str = str(exc).lower()
+                if ("not found" in err_str or "404" in err_str or "not supported" in err_str) and self._model_name != "models/gemini-embedding-001":
+                    logger.warning(
+                        "Model %s failed (%s). Falling back to models/gemini-embedding-001",
+                        self._model_name,
+                        exc,
+                    )
+                    self._model_name = "models/gemini-embedding-001"
+                    self._dimension = 3072
+                    result = await genai.embed_content_async(
+                        model=self._model_name,
+                        content=chunk,
+                        task_type="retrieval_document",
+                    )
+                else:
+                    raise
+
             embeddings = result.get("embedding", [])
             # If a single item was returned, ensure it's a list of lists
             if embeddings and isinstance(embeddings[0], float):
@@ -75,11 +102,30 @@ class GeminiEmbeddingProvider(BaseEmbeddingProvider):
         self._ensure_configured()
         import google.generativeai as genai
 
-        result = await genai.embed_content_async(
-            model=self._model_name,
-            content=query,
-            task_type="retrieval_query",
-        )
+        try:
+            result = await genai.embed_content_async(
+                model=self._model_name,
+                content=query,
+                task_type="retrieval_query",
+            )
+        except Exception as exc:
+            err_str = str(exc).lower()
+            if ("not found" in err_str or "404" in err_str or "not supported" in err_str) and self._model_name != "models/gemini-embedding-001":
+                logger.warning(
+                    "Model %s failed (%s). Falling back to models/gemini-embedding-001",
+                    self._model_name,
+                    exc,
+                )
+                self._model_name = "models/gemini-embedding-001"
+                self._dimension = 3072
+                result = await genai.embed_content_async(
+                    model=self._model_name,
+                    content=query,
+                    task_type="retrieval_query",
+                )
+            else:
+                raise
+
         return result.get("embedding", [])
 
     @property
