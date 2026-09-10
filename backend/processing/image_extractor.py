@@ -25,7 +25,8 @@ class ImageExtractor:
         """
         images = []
         try:
-            for img_info in page.images:
+            # Cap at 5 images per page to prevent memory spikes on dense visual PDFs
+            for img_info in (page.images or [])[:5]:
                 try:
                     # pdfplumber can extract the image bounding box as a crop
                     bbox = (img_info["x0"], img_info["top"], img_info["x1"], img_info["bottom"])
@@ -33,8 +34,11 @@ class ImageExtractor:
                     if bbox[0] >= bbox[2] or bbox[1] >= bbox[3]:
                         continue
                     
-                    # Crop the page image
-                    cropped = page.crop(bbox).to_image(resolution=200).original
+                    # Crop the page image at 120 DPI (balanced for VLM while using 3x less RAM than 200/300)
+                    cropped = page.crop(bbox).to_image(resolution=120).original
+                    # Constrain dimensions to prevent massive bitmap allocations
+                    if cropped.width > 800 or cropped.height > 800:
+                        cropped.thumbnail((800, 800))
                     images.append(cropped)
                 except Exception as e:
                     logger.debug("Failed to extract single image from page: %s", e)

@@ -37,6 +37,7 @@ const state = {
     selectedDocIds: [],          // Track which docs to query against
     forceRoute: '',              // Force a specific route (rag, agentic, structured_data, visual)
     supabase: null,
+    uploadingFiles: [],          // Track files currently being uploaded / processed
 };
 
 // ── DOM Elements ───────────────────────────────────────────
@@ -113,7 +114,11 @@ async function initSupabase() {
     if (cleanUrl && anonKey && window.supabase) {
         try {
             state.supabase = window.supabase.createClient(cleanUrl, anonKey);
-            state.supabase.auth.onAuthStateChange(() => loadAuthState());
+            state.supabase.auth.onAuthStateChange(async () => {
+                await loadAuthState();
+                loadConversations();
+                loadDocuments();
+            });
             return state.supabase;
         } catch (err) {
             console.error('Failed to create Supabase client:', err);
@@ -238,6 +243,8 @@ async function logoutUser() {
     await fetch(`${API_BASE}/api/v1/auth/logout`, { method: 'POST', credentials: 'include' });
     toggleUserMenu();
     await loadAuthState();
+    loadConversations();
+    loadDocuments();
     showToast('You have been logged out', 'info');
 }
 
@@ -950,6 +957,49 @@ function initUpload() {
     });
 }
 
+function renderPendingFiles() {
+    if (!el.pendingFiles) return;
+    if (!state.uploadingFiles || state.uploadingFiles.length === 0) {
+        el.pendingFiles.innerHTML = '';
+        el.pendingFiles.style.display = 'none';
+        return;
+    }
+
+    el.pendingFiles.style.display = 'flex';
+    el.pendingFiles.innerHTML = state.uploadingFiles.map(file => {
+        const ext = file.name.split('.').pop().toLowerCase();
+        const iconClass = getIconClass(ext);
+        let statusBadge = '';
+        if (file.status === 'uploading') {
+            statusBadge = '<span style="color:var(--text-muted);font-size:0.72rem;">Uploading...</span>';
+        } else if (file.status === 'processing' || file.status === 'pending') {
+            statusBadge = '<span style="color:var(--accent-primary);font-size:0.72rem;">⟳ Processing...</span>';
+        } else if (file.status === 'completed') {
+            statusBadge = '<span style="color:var(--success, #10b981);font-size:0.72rem;">✓ Ready</span>';
+        } else if (file.status === 'failed') {
+            statusBadge = '<span style="color:var(--error, #ef4444);font-size:0.72rem;">✗ Failed</span>';
+        }
+
+        return `
+            <div class="pending-file-chip" title="${escapeHtml(file.name)}">
+                <span class="doc-icon ${iconClass}" style="font-size:0.65rem;padding:2px 5px;border-radius:3px;">${ext}</span>
+                <span style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500;">${escapeHtml(file.name)}</span>
+                ${statusBadge}
+                <button type="button" class="remove-file" onclick="removePendingFile('${file.id}')" title="Dismiss">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M18 6L6 18M6 6l12 12" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
+            </div>
+        `;
+    }).join('');
+}
+
+function removePendingFile(fileId) {
+    state.uploadingFiles = (state.uploadingFiles || []).filter(f => f.id !== fileId);
+    renderPendingFiles();
+}
+
 async function handleFiles(files) {
     for (const file of files) {
         await uploadFile(file);
@@ -957,6 +1007,22 @@ async function handleFiles(files) {
 }
 
 async function uploadFile(file) {
+    // Automatically expand documents section in sidebar so user sees it right away
+    if (el.sidebarDocuments) {
+        el.sidebarDocuments.classList.remove('collapsed-section');
+    }
+
+    const tempId = 'up_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+    if (!state.uploadingFiles) state.uploadingFiles = [];
+    state.uploadingFiles.push({
+        id: tempId,
+        name: file.name,
+        size: file.size,
+        status: 'uploading',
+        docId: null,
+    });
+    renderPendingFiles();
+
     showToast(`Uploading ${file.name}...`, 'info');
 
     const formData = new FormData();
@@ -964,45 +1030,100 @@ async function uploadFile(file) {
     formData.append('title', file.name.replace(/\.[^/.]+$/, ''));
 
     try {
+        const headers = await getAuthHeaders();
         const response = await fetch(`${API_BASE}/api/v1/documents/upload`, {
             method: 'POST',
+            headers: headers,
+            credentials: 'same-origin',
             body: formData,
         });
 
         if (!response.ok) {
             let detail = 'Upload failed';
             try { detail = (await response.json()).detail || detail; } catch (e) {}
+            const chip = state.uploadingFiles.find(f => f.id === tempId);
+            if (chip) { chip.status = 'failed'; renderPendingFiles(); }
             throw new Error(detail);
         }
 
         const doc = await response.json();
+        
+        // Update chip in pendingFiles tray
+        const chip = state.uploadingFiles.find(f => f.id === tempId);
+        if (chip) {
+            chip.status = doc.status || 'processing';
+            chip.docId = doc.id;
+            renderPendingFiles();
+        }
+
+        // Add to state.documents immediately so it renders in the sidebar list right away
+        const existingIdx = state.documents.findIndex(d => d.id === doc.id);
+        if (existingIdx >= 0) {
+            state.documents[existingIdx] = doc;
+        } else {
+            state.documents.unshift(doc);
+        }
+        renderDocuments();
+
         showToast(`${file.name} uploaded successfully!`, 'success');
-        pollDocumentStatus(doc.id);
-        loadDocuments();
+        pollDocumentStatus(doc.id, tempId);
     } catch (error) {
+        const chip = state.uploadingFiles.find(f => f.id === tempId);
+        if (chip) { chip.status = 'failed'; renderPendingFiles(); }
         showToast(sanitizeErrorMessage(error.message, 'Unable to upload file.'), 'error');
     }
 }
 
-async function pollDocumentStatus(docId) {
+async function pollDocumentStatus(docId, tempId) {
     let attempts = 0;
     const poll = async () => {
         attempts++;
         try {
-            const response = await fetch(`${API_BASE}/api/v1/documents/${docId}`);
+            const headers = await getAuthHeaders();
+            const response = await fetch(`${API_BASE}/api/v1/documents/${docId}`, {
+                headers: headers,
+                credentials: 'same-origin',
+            });
             if (response.ok) {
                 const doc = await response.json();
+                
+                // Update local document
+                const idx = state.documents.findIndex(d => d.id === doc.id);
+                if (idx >= 0) {
+                    state.documents[idx] = doc;
+                } else {
+                    state.documents.unshift(doc);
+                }
+                renderDocuments();
+
+                // Update chip
+                const chip = state.uploadingFiles?.find(f => f.id === tempId || f.docId === docId);
+                if (chip) {
+                    chip.status = doc.status;
+                    renderPendingFiles();
+                }
+
                 if (doc.status === 'completed') {
                     showToast(`${doc.filename} — ${doc.chunk_count} chunks indexed`, 'success');
-                    loadDocuments();
+                    if (!state.selectedDocIds.includes(doc.id)) {
+                        state.selectedDocIds.push(doc.id);
+                    }
+                    renderDocuments();
                     return;
                 } else if (doc.status === 'failed') {
-                    showToast(`Processing failed for ${doc.filename}`, 'error');
-                    loadDocuments();
+                    showToast(doc.error_message || `Processing failed for ${doc.filename}`, 'error');
+                    renderDocuments();
                     return;
                 }
+            } else if (response.status === 404 && attempts > 5) {
+                // If 404 persists after several attempts, notify user
+                const chip = state.uploadingFiles?.find(f => f.id === tempId || f.docId === docId);
+                if (chip) { chip.status = 'failed'; renderPendingFiles(); }
+                return;
             }
-        } catch (e) {}
+        } catch (e) {
+            console.warn(`Polling attempt ${attempts} error:`, e);
+        }
         if (attempts < 60) setTimeout(poll, 3000);
     };
     setTimeout(poll, 2000);
@@ -1011,10 +1132,21 @@ async function pollDocumentStatus(docId) {
 // ── Document List ──────────────────────────────────────────
 async function loadDocuments() {
     try {
-        const response = await fetch(`${API_BASE}/api/v1/documents/`);
+        const headers = await getAuthHeaders();
+        const response = await fetch(`${API_BASE}/api/v1/documents/`, {
+            headers: headers,
+            credentials: 'same-origin',
+        });
         if (!response.ok) return;
         const data = await response.json();
-        state.documents = data.documents || [];
+        const serverDocs = data.documents || [];
+
+        // Retain any in-flight pending/processing documents so they don't vanish
+        const pendingLocalDocs = (state.documents || []).filter(d =>
+            (d.status === 'pending' || d.status === 'processing') &&
+            !serverDocs.some(sd => sd.id === d.id)
+        );
+        state.documents = [...pendingLocalDocs, ...serverDocs];
 
         // Auto-select all completed documents for querying
         state.selectedDocIds = state.documents
@@ -1098,9 +1230,16 @@ async function deleteDocument(docId, event) {
     if (!confirm('Delete this document and all its data?')) return;
 
     try {
-        await fetch(`${API_BASE}/api/v1/documents/${docId}`, { method: 'DELETE' });
+        const headers = await getAuthHeaders();
+        await fetch(`${API_BASE}/api/v1/documents/${docId}`, {
+            method: 'DELETE',
+            headers: headers,
+            credentials: 'same-origin',
+        });
         showToast('Document deleted', 'info');
         state.selectedDocIds = state.selectedDocIds.filter(id => id !== docId);
+        state.uploadingFiles = (state.uploadingFiles || []).filter(f => f.docId !== docId);
+        renderPendingFiles();
         loadDocuments();
     } catch (error) {
         showToast('Failed to delete document', 'error');

@@ -27,6 +27,7 @@ class DocumentResponse(BaseModel):
     document_type: DocumentType
     file_size: int
     status: ProcessingStatus
+    error_message: Optional[str] = None
     chunk_count: int = 0
     page_count: int = 0
     tags: List[str] = Field(default_factory=list)

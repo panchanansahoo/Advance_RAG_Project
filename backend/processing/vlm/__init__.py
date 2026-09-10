@@ -15,10 +15,12 @@ def get_vlm() -> BaseVLM:
         settings = get_settings()
         if settings.vlm_provider.lower() == "openai":
             from backend.processing.vlm.openai_vlm import OpenAIVLM
-            _vlm_instance = OpenAIVLM(model_name=settings.vlm_model)
+            api_key = settings.openai_api_key.get_secret_value() if settings.openai_api_key else None
+            _vlm_instance = OpenAIVLM(model_name=settings.vlm_model, api_key=api_key)
         else:
             from backend.processing.vlm.gemini_vlm import GeminiVLM
-            _vlm_instance = GeminiVLM(model_name=settings.vlm_model)
+            api_key = settings.google_api_key.get_secret_value() if settings.google_api_key else None
+            _vlm_instance = GeminiVLM(model_name=settings.vlm_model, api_key=api_key)
 
     return _vlm_instance
 

@@ -14,17 +14,17 @@ services:
       - key: CORS_ORIGINS
         value: '["*"]' # Allows requests from Vercel frontend
       - key: LLM_PROVIDER
-        value: openai # 'openai', 'gemini', or 'groq'
+        value: gemini # 'gemini', 'openai', or 'groq'
       - key: LLM_MODEL
-        value: gpt-4o-mini
+        value: gemini-1.5-flash
       - key: EMBEDDING_PROVIDER
-        value: openai
+        value: gemini # API-based embeddings require ~0 MB RAM on Render
       - key: EMBEDDING_MODEL
-        value: text-embedding-3-small
+        value: models/text-embedding-004
       - key: VECTOR_DB_PROVIDER
-        value: qdrant
+        value: chroma # Local persistent vector store
       - key: DATABASE_PROVIDER
-        value: sqlite
+        value: sqlite # Override with DATABASE_URL in Dashboard for Supabase persistence
       - key: OPENAI_API_KEY
         sync: false # Set in Render Dashboard -> Environment
       - key: GOOGLE_API_KEY

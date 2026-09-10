@@ -41,7 +41,8 @@ class GeminiEmbeddingProvider(BaseEmbeddingProvider):
     def _ensure_configured(self):
         if not self._configured:
             import google.generativeai as genai
-            genai.configure(api_key=self._api_key)
+            key = self._api_key.get_secret_value() if hasattr(self._api_key, "get_secret_value") else str(self._api_key)
+            genai.configure(api_key=key)
             self._configured = True
 
     async def embed(self, texts: List[str]) -> List[List[float]]:

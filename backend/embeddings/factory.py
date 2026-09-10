@@ -21,32 +21,57 @@ def get_embedding_provider() -> BaseEmbeddingProvider:
     settings = get_settings()
     provider = settings.embedding_provider.lower()
 
+    # In production (e.g. Render Free tier with 512MB RAM), sentence_transformer causes
+    # Out of Memory crashes. Auto-switch to lightweight cloud API embeddings if available.
+    if provider == "sentence_transformer" and settings.app_env.lower() == "production":
+        google_key = settings.google_api_key.get_secret_value() if settings.google_api_key else ""
+        openai_key = settings.openai_api_key.get_secret_value() if settings.openai_api_key else ""
+        placeholders = {"your-openai-api-key-here", "your-google-api-key-here", "", "changeme"}
+
+        if google_key and google_key.lower() not in placeholders:
+            logger.info("Production environment detected: using Gemini embeddings to conserve RAM.")
+            provider = "gemini"
+        elif openai_key and openai_key.lower() not in placeholders:
+            logger.info("Production environment detected: using OpenAI embeddings to conserve RAM.")
+            provider = "openai"
+
     if provider == "openai":
         from backend.embeddings.openai_embeddings import OpenAIEmbeddingProvider
 
         if not settings.openai_api_key:
             raise ValueError("OPENAI_API_KEY is required for OpenAI embeddings")
+        model_name = settings.embedding_model if (settings.embedding_model or "").startswith("text-embedding") else "text-embedding-3-small"
+        dimension = settings.embedding_dimension if settings.embedding_dimension in (1536, 3072) else 1536
         _instance = OpenAIEmbeddingProvider(
             api_key=settings.openai_api_key,
-            model_name=settings.embedding_model,
-            dimension=settings.embedding_dimension,
+            model_name=model_name,
+            dimension=dimension,
         )
     elif provider in ("gemini", "google"):
         from backend.embeddings.gemini_embeddings import GeminiEmbeddingProvider
 
         if not settings.google_api_key:
             raise ValueError("GOOGLE_API_KEY is required for Gemini embeddings")
+        model_name = settings.embedding_model if "embedding" in (settings.embedding_model or "").lower() else "models/text-embedding-004"
         _instance = GeminiEmbeddingProvider(
             api_key=settings.google_api_key,
-            model_name=settings.embedding_model or "models/text-embedding-004",
+            model_name=model_name,
             dimension=settings.embedding_dimension or 768,
         )
     else:  # default: sentence_transformer
         from backend.embeddings.sentence_transformer import SentenceTransformerProvider
 
+        model_name = settings.embedding_model
+        dimension = settings.embedding_dimension
+        # Prevent 438MB all-mpnet-base-v2 on 512MB RAM servers
+        if model_name == "all-mpnet-base-v2" and settings.app_env.lower() == "production":
+            logger.warning("Replacing heavy 'all-mpnet-base-v2' with lightweight 'all-MiniLM-L6-v2' to prevent OOM crash.")
+            model_name = "all-MiniLM-L6-v2"
+            dimension = 384
+
         _instance = SentenceTransformerProvider(
-            model_name=settings.embedding_model,
-            dimension=settings.embedding_dimension,
+            model_name=model_name,
+            dimension=dimension,
         )
 
     logger.info(
