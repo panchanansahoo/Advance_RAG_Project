@@ -259,23 +259,56 @@ function closeAuthModal() {
 // ── Sidebar Logic ──────────────────────────────────────────
 function initSidebar() {
     el.sidebarCloseBtn.addEventListener('click', () => {
-        el.sidebar.classList.add('collapsed');
         el.sidebar.classList.remove('mobile-open');
         el.sidebarOverlay.classList.remove('visible');
+        if (window.innerWidth > 768) {
+            el.sidebar.classList.add('collapsed');
+        }
     });
 
     el.sidebarOpenBtn.addEventListener('click', () => {
+        el.sidebar.classList.remove('collapsed');
         if (window.innerWidth <= 768) {
             el.sidebar.classList.add('mobile-open');
             el.sidebarOverlay.classList.add('visible');
-        } else {
-            el.sidebar.classList.remove('collapsed');
         }
     });
 
     el.sidebarOverlay.addEventListener('click', () => {
         el.sidebar.classList.remove('mobile-open');
         el.sidebarOverlay.classList.remove('visible');
+    });
+
+    // Touch swipe left to close mobile sidebar drawer
+    let touchStartX = 0;
+    let touchStartY = 0;
+    el.sidebar.addEventListener('touchstart', (e) => {
+        if (e.touches && e.touches.length > 0) {
+            touchStartX = e.touches[0].clientX;
+            touchStartY = e.touches[0].clientY;
+        }
+    }, { passive: true });
+
+    el.sidebar.addEventListener('touchend', (e) => {
+        if (e.changedTouches && e.changedTouches.length > 0) {
+            const touchEndX = e.changedTouches[0].clientX;
+            const touchEndY = e.changedTouches[0].clientY;
+            const diffX = touchEndX - touchStartX;
+            const diffY = touchEndY - touchStartY;
+            // Swiped left by more than 50px predominantly horizontally
+            if (diffX < -50 && Math.abs(diffX) > Math.abs(diffY)) {
+                el.sidebar.classList.remove('mobile-open');
+                el.sidebarOverlay.classList.remove('visible');
+            }
+        }
+    }, { passive: true });
+
+    // Handle screen resize / orientation changes
+    window.addEventListener('resize', () => {
+        if (window.innerWidth > 768) {
+            el.sidebar.classList.remove('mobile-open');
+            el.sidebarOverlay.classList.remove('visible');
+        }
     });
 
     el.newChatBtn.addEventListener('click', () => startNewChat());
@@ -301,12 +334,28 @@ function initKeyboardShortcuts() {
         // Ctrl/Cmd + Shift + S → Toggle sidebar
         if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'S') {
             e.preventDefault();
-            el.sidebar.classList.toggle('collapsed');
+            if (window.innerWidth <= 768) {
+                const isOpen = el.sidebar.classList.contains('mobile-open');
+                el.sidebar.classList.toggle('mobile-open', !isOpen);
+                el.sidebarOverlay.classList.toggle('visible', !isOpen);
+            } else {
+                el.sidebar.classList.toggle('collapsed');
+            }
         }
-        // Escape → Stop generation
-        if (e.key === 'Escape' && state.isLoading) {
-            e.preventDefault();
-            stopGeneration();
+        // Escape → Close open overlays or stop generation
+        if (e.key === 'Escape') {
+            if (el.evaluationPanel && el.evaluationPanel.classList.contains('visible')) {
+                el.evaluationPanel.classList.remove('visible');
+                el.evaluationPanel.setAttribute('aria-hidden', 'true');
+            }
+            if (window.innerWidth <= 768 && el.sidebar.classList.contains('mobile-open')) {
+                el.sidebar.classList.remove('mobile-open');
+                el.sidebarOverlay.classList.remove('visible');
+            }
+            if (state.isLoading) {
+                e.preventDefault();
+                stopGeneration();
+            }
         }
         // Focus input with /
         if (e.key === '/' && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
@@ -414,6 +463,17 @@ function initEvaluation() {
         el.evaluationPanel.classList.remove('visible');
         el.evaluationPanel.setAttribute('aria-hidden', 'true');
     });
+
+    // Close evaluation dashboard when clicking outside
+    document.addEventListener('click', (e) => {
+        if (el.evaluationPanel && el.evaluationPanel.classList.contains('visible')) {
+            if (!e.target.closest('#evaluationPanel') && !e.target.closest('#evaluationBtn')) {
+                el.evaluationPanel.classList.remove('visible');
+                el.evaluationPanel.setAttribute('aria-hidden', 'true');
+            }
+        }
+    });
+
     el.runEvaluationBtn.addEventListener('click', runEvaluation);
     el.runExperimentsBtn.addEventListener('click', runExperiments);
 }
@@ -1053,7 +1113,8 @@ function initChat() {
 
     queryInput.addEventListener('input', () => {
         queryInput.style.height = 'auto';
-        queryInput.style.height = Math.min(queryInput.scrollHeight, 180) + 'px';
+        const maxHeight = window.innerWidth <= 768 ? 110 : 180;
+        queryInput.style.height = Math.min(queryInput.scrollHeight, maxHeight) + 'px';
         updateSendButton();
     });
 

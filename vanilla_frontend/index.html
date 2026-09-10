@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
     <meta name="description" content="Advanced Multimodal RAG Assistant — AI-powered document intelligence and question answering platform with evidence-grounded citations.">
     <title>Advanced RAG Assistant</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -140,7 +140,10 @@
                     </svg>
                 </button>
                 <button class="evaluation-btn" id="evaluationBtn" type="button" title="Open evaluation dashboard">
-                    <span>Evaluation</span>
+                    <svg class="evaluation-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M18 20V10M12 20V4M6 20v-6" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                    <span class="evaluation-btn-text">Evaluation</span>
                 </button>
                 <div class="model-selector" id="modelSelector">
                     <button class="model-selector-btn" id="modelSelectorBtn" type="button">
