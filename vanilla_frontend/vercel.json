@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/:match*",
+      "destination": "https://advanced-rag-backend.onrender.com/api/:match*"
+    }
+  ]
+}

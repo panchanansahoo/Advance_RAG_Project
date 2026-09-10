@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: advanced-rag-backend
+    env: docker
+    dockerfilePath: ./Dockerfile
+    region: oregon # Or any preferred region
+    plan: starter # Adjust plan based on required resources (PDF processing can be memory intensive)
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: CORS_ORIGINS
+        value: '["*"]' # Allow all for now, we'll proxy via Vercel anyway
+      - key: LLM_PROVIDER
+        value: openai # Ensure these are configured in Render dashboard
+      - key: OPENAI_API_KEY
+        sync: false # Set this value manually in the Render dashboard
+      # Add other API keys as needed (GOOGLE_API_KEY, GROQ_API_KEY)
+      - key: DATABASE_PROVIDER
+        value: sqlite # Using sqlite by default, change to postgres if you add a DB service
