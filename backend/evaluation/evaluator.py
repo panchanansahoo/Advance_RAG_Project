@@ -190,9 +190,12 @@ async def run_evaluation(dataset_path: str, output_path: str):
             # Actually call the RAG pipeline
             start_time = time.time()
             try:
+                from backend.config import get_settings
+                headers = {"X-Internal-Secret": get_settings().auth_secret}
                 response = await client.post(
                     f"{BACKEND_URL}/api/v1/query",
                     json={"query": q},
+                    headers=headers,
                 )
                 elapsed_ms = (time.time() - start_time) * 1000
                 system_metrics["latencies_ms"].append(elapsed_ms)
@@ -261,6 +264,7 @@ async def run_evaluation(dataset_path: str, output_path: str):
                 results["ground_truth"].append(ground_truth)
 
             system_metrics["total_queries"] += 1
+            await asyncio.sleep(1.5)  # Pace queries to stay within model API rate limits
 
     total_wall_time = time.time() - start_wall
 

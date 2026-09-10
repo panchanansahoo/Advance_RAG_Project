@@ -38,8 +38,14 @@ router = APIRouter(prefix="/api/v1", tags=["Query"])
 limiter = Limiter(key_func=get_remote_address)
 
 
+def _is_exempt_from_rate_limit(request: Request) -> bool:
+    from backend.config import get_settings
+    secret = request.headers.get("X-Internal-Secret")
+    return bool(secret and secret == get_settings().auth_secret)
+
+
 @router.post("/query", response_model=QueryResponse)
-@limiter.limit("10/minute")
+@limiter.limit("10/minute", exempt_when=_is_exempt_from_rate_limit)
 async def query(request_obj: QueryRequest, request: Request, response: Response, db: AsyncSession = Depends(get_db)):
     """
     Ask a question and get a grounded answer with citations.

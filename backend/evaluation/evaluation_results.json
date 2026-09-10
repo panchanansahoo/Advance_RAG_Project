@@ -1,0 +1,25 @@
+{
+    "aggregate_scores": {
+        "avg_latency_ms": 10829.6,
+        "p95_latency_ms": 17309.3,
+        "total_queries": 12,
+        "success_rate": 0.583,
+        "throughput_qps": 0.09,
+        "total_input_tokens": 0,
+        "total_output_tokens": 0,
+        "estimated_cost_usd": 0.0
+    },
+    "retrieval_metrics": {},
+    "system_metrics": {
+        "avg_latency_ms": 10829.6,
+        "p95_latency_ms": 17309.3,
+        "total_queries": 12,
+        "success_rate": 0.583,
+        "throughput_qps": 0.09,
+        "total_input_tokens": 0,
+        "total_output_tokens": 0,
+        "estimated_cost_usd": 0.0
+    },
+    "ragas_metrics": {},
+    "details": []
+}

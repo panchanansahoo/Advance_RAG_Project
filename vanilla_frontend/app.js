@@ -442,7 +442,7 @@ function renderExperimentResults(data) {
         return;
     }
     const rows = data.comparisons || data.results || data.experiments || [];
-    el.evaluationExperiments.innerHTML = `<h3>Architecture comparison</h3>${Array.isArray(rows) && rows.length ? rows.map((row) => `<div class="experiment-row"><span>${escapeHtml(row.name || row.architecture || 'Configuration')}</span><strong>${row.score !== undefined ? row.score : row.average_score !== undefined ? row.average_score : 'Ready'}</strong></div>`).join('') : '<div class="evaluation-empty">Comparison report loaded.</div>'}`;
+    el.evaluationExperiments.innerHTML = `<h3>Architecture comparison</h3>${Array.isArray(rows) && rows.length ? rows.map((row) => `<div class="experiment-row"><span>${escapeHtml(row.name || row.config_name || row.architecture || 'Configuration')}</span><strong>${row.score !== undefined ? escapeHtml(String(row.score)) : (row.metrics && row.metrics.p95_latency_ms ? `${Math.round(row.metrics.p95_latency_ms)}ms` : 'Ready')}</strong></div>`).join('') : '<div class="evaluation-empty">Comparison report loaded.</div>'}`;
 }
 
 async function runEvaluation() {

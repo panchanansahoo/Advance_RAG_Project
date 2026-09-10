@@ -249,7 +249,10 @@ class ExperimentRunner:
                     "query": question,
                     "use_agent": config.agentic_rag_force,
                 }
+                from backend.config import get_settings
+
                 headers = {
+                    "X-Internal-Secret": get_settings().auth_secret,
                     "X-Retrieval-Strategy": config.retrieval_strategy,
                     "X-Reranker-Enabled": str(config.reranker_enabled),
                 }
@@ -257,7 +260,7 @@ class ExperimentRunner:
                 try:
                     async with httpx.AsyncClient(timeout=60.0) as client:
                         resp = await client.post(
-                            f"{self.backend_url}/api/query",
+                            f"{self.backend_url}/api/v1/query",
                             json=payload,
                             headers=headers,
                         )
@@ -311,6 +314,7 @@ class ExperimentRunner:
                     metadata=meta,
                 )
             )
+            await asyncio.sleep(1.5)
 
         total_wall = time.time() - start_wall
         n_queries = max(len(dataset), 1)
@@ -507,9 +511,11 @@ class ExperimentRunner:
             "deltas_vs_baseline": report.deltas_vs_baseline,
             "experiments": [
                 {
+                    "name": e.config_name,
                     "config_name": e.config_name,
                     "description": e.description,
                     "metrics": e.metrics,
+                    "score": f"P95: {int(e.metrics.get('p95_latency_ms', 0))}ms" if 'p95_latency_ms' in e.metrics else "Complete",
                 }
                 for e in report.experiments
             ],

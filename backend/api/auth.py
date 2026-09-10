@@ -83,6 +83,10 @@ def get_session(request: Request) -> Optional[dict]:
 
 async def get_user_key(request: Request, response: Optional[Response] = None) -> str:
     """Return a stable owner key for per-user data."""
+    internal_secret = request.headers.get("X-Internal-Secret")
+    if internal_secret and internal_secret == get_settings().auth_secret:
+        return "system:evaluator"
+
     supabase_user = await get_supabase_user(request)
     if supabase_user:
         identity = supabase_user.get("id") or supabase_user.get("email")
@@ -211,6 +215,10 @@ async def enforce_question_access(request: Request, response: Response) -> None:
         return
     request.state.question_access_checked = True
     if await is_authenticated(request):
+        return
+
+    internal_secret = request.headers.get("X-Internal-Secret")
+    if internal_secret and internal_secret == get_settings().auth_secret:
         return
 
     try:
