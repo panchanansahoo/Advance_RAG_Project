@@ -4,7 +4,7 @@
  * citations, model selector, stop/regenerate, keyboard shortcuts.
  */
 
-const API_BASE = ""; // Uses relative routing, proxy handled by Vercel
+const API_BASE = (typeof window !== "undefined" && window.__API_BASE__) ? window.__API_BASE__ : ""; // Uses relative routing by default, proxy handled by Vercel
 
 // ── State ──────────────────────────────────────────────────
 const state = {

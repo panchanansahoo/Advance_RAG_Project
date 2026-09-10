@@ -3,18 +3,31 @@ services:
     name: advanced-rag-backend
     env: docker
     dockerfilePath: ./Dockerfile
-    region: oregon # Or any preferred region
-    plan: starter # Adjust plan based on required resources (PDF processing can be memory intensive)
+    region: oregon # Supported: oregon, ohio, frankfurt, singapore
+    plan: starter # Options: 'free' or 'starter' (starter recommended for memory-intensive PDF/OCR)
     healthCheckPath: /api/v1/health
     envVars:
       - key: APP_ENV
         value: production
+      - key: PORT
+        value: 10000
       - key: CORS_ORIGINS
-        value: '["*"]' # Allow all for now, we'll proxy via Vercel anyway
+        value: '["*"]' # Allows requests from Vercel frontend
       - key: LLM_PROVIDER
-        value: openai # Ensure these are configured in Render dashboard
-      - key: OPENAI_API_KEY
-        sync: false # Set this value manually in the Render dashboard
-      # Add other API keys as needed (GOOGLE_API_KEY, GROQ_API_KEY)
+        value: openai # 'openai', 'gemini', or 'groq'
+      - key: LLM_MODEL
+        value: gpt-4o-mini
+      - key: EMBEDDING_PROVIDER
+        value: openai
+      - key: EMBEDDING_MODEL
+        value: text-embedding-3-small
+      - key: VECTOR_DB_PROVIDER
+        value: qdrant
       - key: DATABASE_PROVIDER
-        value: sqlite # Using sqlite by default, change to postgres if you add a DB service
+        value: sqlite
+      - key: OPENAI_API_KEY
+        sync: false # Set in Render Dashboard -> Environment
+      - key: GOOGLE_API_KEY
+        sync: false # Optional, set if using Gemini
+      - key: GROQ_API_KEY
+        sync: false # Optional, set if using Groq

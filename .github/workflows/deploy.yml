@@ -1,0 +1,108 @@
+name: CI/CD - Deploy to Render & Vercel
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  filter:
+    name: Detect Changed Components
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.changes.outputs.backend }}
+      frontend: ${{ steps.changes.outputs.frontend }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Check Paths for Changes
+        id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+              - 'Dockerfile'
+              - 'requirements.txt'
+              - 'render.yaml'
+              - 'pyproject.toml'
+              - '.github/workflows/deploy.yml'
+            frontend:
+              - 'vanilla_frontend/**'
+              - 'vercel.json'
+              - '.github/workflows/deploy.yml'
+
+  deploy-backend:
+    name: Deploy Backend to Render
+    needs: [filter]
+    if: needs.filter.outputs.backend == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Render Deploy Hook
+        env:
+          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$RENDER_DEPLOY_HOOK" ]; then
+            echo "::error::RENDER_DEPLOY_HOOK_URL secret is not set."
+            echo "To fix: Go to GitHub Repo -> Settings -> Secrets and variables -> Actions -> New repository secret."
+            echo "Add RENDER_DEPLOY_HOOK_URL with your Render Deploy Hook URL."
+            exit 1
+          fi
+
+          echo "Triggering Render deployment..."
+          RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X POST "$RENDER_DEPLOY_HOOK")
+          HTTP_STATUS=$(echo "$RESPONSE" | grep "HTTP_STATUS:" | cut -d':' -f2)
+          BODY=$(echo "$RESPONSE" | grep -v "HTTP_STATUS:")
+
+          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+            echo "Render deploy triggered successfully (HTTP $HTTP_STATUS)!"
+            echo "Response: $BODY"
+          else
+            echo "::error::Render deploy hook failed with status $HTTP_STATUS"
+            echo "Response: $BODY"
+            exit 1
+          fi
+
+  deploy-frontend:
+    name: Deploy Frontend to Vercel
+    needs: [filter]
+    if: needs.filter.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Verify Vercel Secrets
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          if [ -z "$VERCEL_TOKEN" ] || [ -z "$VERCEL_ORG_ID" ] || [ -z "$VERCEL_PROJECT_ID" ]; then
+            echo "::error::Missing Vercel secrets."
+            echo "Please configure the following in GitHub Repo -> Settings -> Secrets and variables -> Actions:"
+            echo "  - VERCEL_TOKEN"
+            echo "  - VERCEL_ORG_ID"
+            echo "  - VERCEL_PROJECT_ID"
+            exit 1
+          fi
+          echo "All Vercel credentials are present."
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Pull Vercel Environment Configuration
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Build Project Artifacts
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Deploy to Vercel Production
+        run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
