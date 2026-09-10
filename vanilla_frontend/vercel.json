@@ -3,8 +3,8 @@
   "framework": null,
   "rewrites": [
     {
-      "source": "/api/:match*",
-      "destination": "https://advance-rag-project.onrender.com/api/:match*"
+      "source": "/api/(.*)",
+      "destination": "https://advance-rag-project.onrender.com/api/$1"
     }
   ]
 }
