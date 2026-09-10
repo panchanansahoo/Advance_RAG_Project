@@ -1,0 +1,241 @@
+{
+    "timestamp": "2026-09-10T12:24:42.087336+00:00",
+    "total_queries": 12,
+    "comparison_table": [
+        {
+            "Configuration": "Vanilla RAG",
+            "total_queries": 12.0,
+            "success_rate": 0.917,
+            "avg_latency_ms": 34200.0,
+            "p95_latency_ms": 60283.2,
+            "throughput_qps": 0.03,
+            "total_input_tokens": 0.0,
+            "total_output_tokens": 0.0,
+            "estimated_cost_usd": 0.0,
+            "recall_at_5": 0.0,
+            "precision_at_5": 0.0,
+            "mrr": 0.0,
+            "ndcg_at_5": 0.0
+        },
+        {
+            "Configuration": "Hybrid RAG",
+            "total_queries": 12.0,
+            "success_rate": 0.667,
+            "avg_latency_ms": 16061.1,
+            "p95_latency_ms": 39544.1,
+            "throughput_qps": 0.06,
+            "total_input_tokens": 0.0,
+            "total_output_tokens": 0.0,
+            "estimated_cost_usd": 0.0,
+            "recall_at_5": 0.0,
+            "precision_at_5": 0.0,
+            "mrr": 0.0,
+            "ndcg_at_5": 0.0
+        },
+        {
+            "Configuration": "Hybrid + Reranker",
+            "total_queries": 12.0,
+            "success_rate": 0.75,
+            "avg_latency_ms": 12442.7,
+            "p95_latency_ms": 29892.5,
+            "throughput_qps": 0.07,
+            "total_input_tokens": 0.0,
+            "total_output_tokens": 0.0,
+            "estimated_cost_usd": 0.0,
+            "recall_at_5": 0.0,
+            "precision_at_5": 0.0,
+            "mrr": 0.0,
+            "ndcg_at_5": 0.0
+        },
+        {
+            "Configuration": "Advanced RAG",
+            "total_queries": 12.0,
+            "success_rate": 0.5,
+            "avg_latency_ms": 12219.1,
+            "p95_latency_ms": 20429.5,
+            "throughput_qps": 0.07,
+            "total_input_tokens": 0.0,
+            "total_output_tokens": 0.0,
+            "estimated_cost_usd": 0.0,
+            "recall_at_5": 0.0,
+            "precision_at_5": 0.0,
+            "mrr": 0.0,
+            "ndcg_at_5": 0.0
+        },
+        {
+            "Configuration": "Agentic RAG",
+            "total_queries": 12.0,
+            "success_rate": 1.0,
+            "avg_latency_ms": 9847.2,
+            "p95_latency_ms": 12413.5,
+            "throughput_qps": 0.09,
+            "total_input_tokens": 0.0,
+            "total_output_tokens": 0.0,
+            "estimated_cost_usd": 0.0,
+            "recall_at_5": 0.0,
+            "precision_at_5": 0.0,
+            "mrr": 0.0,
+            "ndcg_at_5": 0.0
+        }
+    ],
+    "deltas_vs_baseline": {
+        "Hybrid RAG": {
+            "total_queries": 0.0,
+            "success_rate": -27.26,
+            "avg_latency_ms": -53.04,
+            "p95_latency_ms": -34.4,
+            "throughput_qps": 100.0,
+            "total_input_tokens": 0.0,
+            "total_output_tokens": 0.0,
+            "estimated_cost_usd": 0.0,
+            "recall_at_5": 0.0,
+            "precision_at_5": 0.0,
+            "mrr": 0.0,
+            "ndcg_at_5": 0.0
+        },
+        "Hybrid + Reranker": {
+            "total_queries": 0.0,
+            "success_rate": -18.21,
+            "avg_latency_ms": -63.62,
+            "p95_latency_ms": -50.41,
+            "throughput_qps": 133.33,
+            "total_input_tokens": 0.0,
+            "total_output_tokens": 0.0,
+            "estimated_cost_usd": 0.0,
+            "recall_at_5": 0.0,
+            "precision_at_5": 0.0,
+            "mrr": 0.0,
+            "ndcg_at_5": 0.0
+        },
+        "Advanced RAG": {
+            "total_queries": 0.0,
+            "success_rate": -45.47,
+            "avg_latency_ms": -64.27,
+            "p95_latency_ms": -66.11,
+            "throughput_qps": 133.33,
+            "total_input_tokens": 0.0,
+            "total_output_tokens": 0.0,
+            "estimated_cost_usd": 0.0,
+            "recall_at_5": 0.0,
+            "precision_at_5": 0.0,
+            "mrr": 0.0,
+            "ndcg_at_5": 0.0
+        },
+        "Agentic RAG": {
+            "total_queries": 0.0,
+            "success_rate": 9.05,
+            "avg_latency_ms": -71.21,
+            "p95_latency_ms": -79.41,
+            "throughput_qps": 200.0,
+            "total_input_tokens": 0.0,
+            "total_output_tokens": 0.0,
+            "estimated_cost_usd": 0.0,
+            "recall_at_5": 0.0,
+            "precision_at_5": 0.0,
+            "mrr": 0.0,
+            "ndcg_at_5": 0.0
+        }
+    },
+    "experiments": [
+        {
+            "name": "Vanilla RAG",
+            "config_name": "Vanilla RAG",
+            "description": "Baseline: Vector similarity search only, no reranking, no rewriting",
+            "metrics": {
+                "total_queries": 12.0,
+                "success_rate": 0.917,
+                "avg_latency_ms": 34200.0,
+                "p95_latency_ms": 60283.2,
+                "throughput_qps": 0.03,
+                "total_input_tokens": 0.0,
+                "total_output_tokens": 0.0,
+                "estimated_cost_usd": 0.0,
+                "recall_at_5": 0.0,
+                "precision_at_5": 0.0,
+                "mrr": 0.0,
+                "ndcg_at_5": 0.0
+            },
+            "score": "P95: 60283ms"
+        },
+        {
+            "name": "Hybrid RAG",
+            "config_name": "Hybrid RAG",
+            "description": "Vector + BM25 keyword search with Reciprocal Rank Fusion",
+            "metrics": {
+                "total_queries": 12.0,
+                "success_rate": 0.667,
+                "avg_latency_ms": 16061.1,
+                "p95_latency_ms": 39544.1,
+                "throughput_qps": 0.06,
+                "total_input_tokens": 0.0,
+                "total_output_tokens": 0.0,
+                "estimated_cost_usd": 0.0,
+                "recall_at_5": 0.0,
+                "precision_at_5": 0.0,
+                "mrr": 0.0,
+                "ndcg_at_5": 0.0
+            },
+            "score": "P95: 39544ms"
+        },
+        {
+            "name": "Hybrid + Reranker",
+            "config_name": "Hybrid + Reranker",
+            "description": "Hybrid search followed by Cross-Encoder reranking",
+            "metrics": {
+                "total_queries": 12.0,
+                "success_rate": 0.75,
+                "avg_latency_ms": 12442.7,
+                "p95_latency_ms": 29892.5,
+                "throughput_qps": 0.07,
+                "total_input_tokens": 0.0,
+                "total_output_tokens": 0.0,
+                "estimated_cost_usd": 0.0,
+                "recall_at_5": 0.0,
+                "precision_at_5": 0.0,
+                "mrr": 0.0,
+                "ndcg_at_5": 0.0
+            },
+            "score": "P95: 29892ms"
+        },
+        {
+            "name": "Advanced RAG",
+            "config_name": "Advanced RAG",
+            "description": "Full Advanced RAG: Hybrid + Reranker + Query Rewriting + Compression + Verification",
+            "metrics": {
+                "total_queries": 12.0,
+                "success_rate": 0.5,
+                "avg_latency_ms": 12219.1,
+                "p95_latency_ms": 20429.5,
+                "throughput_qps": 0.07,
+                "total_input_tokens": 0.0,
+                "total_output_tokens": 0.0,
+                "estimated_cost_usd": 0.0,
+                "recall_at_5": 0.0,
+                "precision_at_5": 0.0,
+                "mrr": 0.0,
+                "ndcg_at_5": 0.0
+            },
+            "score": "P95: 20429ms"
+        },
+        {
+            "name": "Agentic RAG",
+            "config_name": "Agentic RAG",
+            "description": "Agentic framework with sub-query decomposition, self-correction, and tool use",
+            "metrics": {
+                "total_queries": 12.0,
+                "success_rate": 1.0,
+                "avg_latency_ms": 9847.2,
+                "p95_latency_ms": 12413.5,
+                "throughput_qps": 0.09,
+                "total_input_tokens": 0.0,
+                "total_output_tokens": 0.0,
+                "estimated_cost_usd": 0.0,
+                "recall_at_5": 0.0,
+                "precision_at_5": 0.0,
+                "mrr": 0.0,
+                "ndcg_at_5": 0.0
+            },
+            "score": "P95: 12413ms"
+        }
+    ]
+}
