@@ -42,14 +42,22 @@ graph LR
 ### Step 2.2: Add Environment Variables in Render
 In your Render Service Dashboard, go to **Environment** and add:
 - `APP_ENV`: `production`
-- `OPENAI_API_KEY`: `your_openai_api_key`
-- `GOOGLE_API_KEY`: *(optional, if using Gemini)*
+- `LLM_PROVIDER`: `gemini` (or `openai` / `groq`)
+- `EMBEDDING_PROVIDER`: `gemini` (or `openai`) — **Crucial for Free Tier**: API embeddings use ~0 MB RAM!
+- `EMBEDDING_MODEL`: `models/text-embedding-004` (for Gemini) or `text-embedding-3-small` (for OpenAI)
+- `GOOGLE_API_KEY`: *(your Google Gemini key)*
+- `OPENAI_API_KEY`: *(optional, if using OpenAI)*
 - `GROQ_API_KEY`: *(optional, if using Groq)*
 - `DATABASE_PROVIDER`: `sqlite`
-- `VECTOR_DB_PROVIDER`: `qdrant`
+- `VECTOR_DB_PROVIDER`: `chroma` (or `qdrant`)
 - `CORS_ORIGINS`: `["*"]`
 - `SUPABASE_URL`: *(e.g., `https://<project-ref>.supabase.co`)*
 - `SUPABASE_ANON_KEY`: *(your Supabase anon/public key)*
+
+> [!WARNING]
+> **Render Free Tier (512MB RAM) vs Local Embeddings**:
+> `sentence_transformer` (local PyTorch + `all-mpnet-base-v2` or `all-MiniLM-L6-v2`) requires 600MB+ of RAM and **will cause `Out of memory (used over 512Mi)` crash on Render Free tier**.
+> If using Render Free tier, always set `EMBEDDING_PROVIDER=gemini` or `openai`. If you want to use local `sentence_transformer`, upgrade the Render service plan to **Starter** (1GB RAM).
 
 > [!NOTE]
 > Render provides the `PORT` variable dynamically. The `Dockerfile` is pre-configured to bind automatically to `${PORT:-8000}`.

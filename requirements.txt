@@ -13,6 +13,7 @@ slowapi>=0.1.10
 # ── Database & Vector Store ────────────────────────────────
 SQLAlchemy>=2.0.36
 asyncpg>=0.30.0
+aiosqlite>=0.20.0
 qdrant-client>=1.12.1
 chromadb>=0.5.23
 psycopg2-binary>=2.9.10

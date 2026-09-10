@@ -21,10 +21,14 @@ class SentenceTransformerProvider(BaseEmbeddingProvider):
     The model is loaded once and cached.
     """
 
-    def __init__(self, model_name: str = "all-MiniLM-L6-v2"):
+    def __init__(
+        self,
+        model_name: str = "all-MiniLM-L6-v2",
+        dimension: int | None = None,
+    ):
         self._model_name = model_name
         self._model = None
-        self._dimension = None
+        self._dimension = dimension
 
     def _load_model(self):
         """Lazy-load the model on first use."""

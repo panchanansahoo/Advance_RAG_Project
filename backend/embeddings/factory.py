@@ -31,11 +31,22 @@ def get_embedding_provider() -> BaseEmbeddingProvider:
             model_name=settings.embedding_model,
             dimension=settings.embedding_dimension,
         )
+    elif provider in ("gemini", "google"):
+        from backend.embeddings.gemini_embeddings import GeminiEmbeddingProvider
+
+        if not settings.google_api_key:
+            raise ValueError("GOOGLE_API_KEY is required for Gemini embeddings")
+        _instance = GeminiEmbeddingProvider(
+            api_key=settings.google_api_key,
+            model_name=settings.embedding_model or "models/text-embedding-004",
+            dimension=settings.embedding_dimension or 768,
+        )
     else:  # default: sentence_transformer
         from backend.embeddings.sentence_transformer import SentenceTransformerProvider
 
         _instance = SentenceTransformerProvider(
             model_name=settings.embedding_model,
+            dimension=settings.embedding_dimension,
         )
 
     logger.info(
