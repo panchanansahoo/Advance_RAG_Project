@@ -42,33 +42,46 @@ class PandasAgent:
             try:
                 if path.lower().endswith((".xlsx", ".xls")):
                     df = pd.read_excel(path, nrows=5)
+                    df_full = pd.read_excel(path)
                 else:
                     df = pd.read_csv(path, nrows=5)
+                    df_full = pd.read_csv(path)
                 schemas[f"df_{idx}"] = {
                     "path": path,
                     "columns": list(df.columns),
                     "dtypes": {col: str(dt) for col, dt in df.dtypes.items()},
-                    "sample": df.head(2).to_dict(orient="records")
+                    "sample": df.head(2).to_dict(orient="records"),
+                    "total_rows": len(df_full),
                 }
             except Exception as e:
                 logger.warning("Failed to load schema for %s: %s", path, e)
 
         if not schemas:
-            return "Failed to read schemas for the provided files."
+            return "I couldn't read the data tables in the provided spreadsheet files. Please verify the file format and try again."
 
         # Step 1: Generate Code
         code = await self._generate_code(query, schemas)
         if not code:
-            return "Failed to generate execution code for the query."
+            return "I couldn't determine how to calculate the answer from this spreadsheet. Please try rephrasing your question."
 
         # Step 2: Execute Code
         result = await self._execute_code(code, schemas)
+
+        # Step 2.5: Retry with error feedback if first execution failed
+        if isinstance(result, str) and result.startswith(("Execution Error:", "Syntax Error")):
+            logger.info("First code execution failed, retrying with error feedback")
+            code_retry = await self._generate_code(
+                query, schemas,
+                error_feedback=f"The previous code failed with: {result}. Please fix and try again.",
+            )
+            if code_retry:
+                result = await self._execute_code(code_retry, schemas)
 
         # Step 3: Summarize Result
         final_answer = await self._summarize_result(query, result)
         return final_answer
 
-    async def _generate_code(self, query: str, schemas: Dict[str, Any]) -> str:
+    async def _generate_code(self, query: str, schemas: Dict[str, Any], error_feedback: str = "") -> str:
         """Ask the LLM to generate Pandas code."""
         llm = get_llm()
         
@@ -77,6 +90,7 @@ class PandasAgent:
             schema_desc += f"\nDataframe Name: `{df_name}` (loaded from {info['path']})\n"
             schema_desc += f"Columns: {info['columns']}\n"
             schema_desc += f"Types: {info['dtypes']}\n"
+            schema_desc += f"Total Rows: {info.get('total_rows', 'unknown')}\n"
             schema_desc += f"Sample Row: {info['sample']}\n"
 
         system_prompt = (
@@ -96,6 +110,9 @@ class PandasAgent:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": f"Query: {query}"}
         ]
+
+        if error_feedback:
+            messages.append({"role": "user", "content": error_feedback})
 
         try:
             response = await llm.generate(messages, temperature=0.0, max_tokens=300)
@@ -153,9 +170,15 @@ class PandasAgent:
                             f"Execution Error: Call to '{func.id}()' is not allowed "
                             "for security reasons."
                         )
-                    # Block method calls like os.system(), subprocess.run()
+                    # Block method calls like os.system(), subprocess.run(), file-writing
                     if isinstance(func, ast.Attribute):
-                        if func.attr in {"system", "popen", "run", "call", "check_output"}:
+                        dangerous_methods = {
+                            "system", "popen", "run", "call", "check_output",
+                            # File-writing methods (data exfiltration prevention)
+                            "to_csv", "to_excel", "to_pickle", "to_parquet",
+                            "to_hdf", "to_feather", "to_json",
+                        }
+                        if func.attr in dangerous_methods:
                             return (
                                 f"Execution Error: Call to '.{func.attr}()' is not allowed "
                                 "for security reasons."
@@ -208,11 +231,12 @@ class PandasAgent:
                 exec(code, exec_globals, exec_locals)
                 return exec_locals.get("result", "Execution successful but `result` variable was not set.")
             except Exception as e:
-                return f"Execution Error: {traceback.format_exc()}"
+                logger.error("Pandas code execution failed: %s\n%s", e, traceback.format_exc())
+                return f"Execution Error: {e}"
 
         try:
             # Run in a separate thread to avoid blocking the async event loop
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             result_obj = await asyncio.wait_for(
                 loop.run_in_executor(None, run_exec),
                 timeout=self.settings.pandas_execution_timeout
@@ -229,6 +253,7 @@ class PandasAgent:
         except asyncio.TimeoutError:
             return f"Execution Timeout: Code took longer than {self.settings.pandas_execution_timeout} seconds."
         except Exception as e:
+            logger.error("Unexpected error during pandas execution: %s", e)
             return f"Unexpected Error: {e}"
 
     async def _summarize_result(self, query: str, execution_result: str) -> str:
@@ -236,9 +261,12 @@ class PandasAgent:
         llm = get_llm()
         
         system_prompt = (
-            "You are a helpful data analyst. The user asked a question, and a Python script was executed to find the answer. "
-            "Based on the execution result provided, formulate a clear, concise, and natural language answer to the user's question. "
-            "If the execution resulted in an error, apologize and explain what went wrong."
+            "You are a helpful data analyst. The user asked a question about spreadsheet data. "
+            "Based on the execution result provided, formulate a clear, concise, and natural language answer to the user's question.\n\n"
+            "RULES:\n"
+            "- Never mention programming terms, Python, code snippets, syntax, libraries, or stack traces.\n"
+            "- If an error or limitation occurred, explain politely in simple non-technical words and advise how to adjust the question.\n"
+            "- If the result contains calculated numbers or tables, present them clearly."
         )
 
         messages = [
@@ -250,4 +278,8 @@ class PandasAgent:
             return await llm.generate(messages, temperature=0.3, max_tokens=300)
         except Exception as e:
             logger.error("Failed to summarize result: %s", e)
-            return f"Raw result (summarization failed): {execution_result}"
+            from backend.utils.error_sanitizer import sanitize_error_message
+            return sanitize_error_message(
+                execution_result,
+                default_fallback="I was unable to complete the calculation on this spreadsheet data. Please check your question or column names and try again.",
+            )

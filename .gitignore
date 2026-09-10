@@ -50,6 +50,8 @@ logs/*
 # Database & Vector DB
 *.db
 *.sqlite3
+chroma_data/
+bm25_index.json
 
 # Alembic
 alembic/versions/*.pyc

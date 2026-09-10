@@ -10,12 +10,13 @@ import logging
 from typing import List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.connection import get_db
 from backend.database.repositories.conversation_repo import ConversationRepository
+from backend.api.auth import get_user_key
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/conversations", tags=["Conversations"])
@@ -57,11 +58,14 @@ class ConversationListOut(BaseModel):
 @router.post("/", response_model=ConversationOut, status_code=201)
 async def create_conversation(
     body: ConversationCreate,
+    request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new conversation."""
     repo = ConversationRepository(db)
-    conv = await repo.create_conversation(title=body.title)
+    owner_key = await get_user_key(request, response)
+    conv = await repo.create_conversation(title=body.title, owner_key=owner_key)
     return ConversationOut(
         id=conv.id,
         title=conv.title,
@@ -71,13 +75,18 @@ async def create_conversation(
 
 @router.get("/", response_model=ConversationListOut)
 async def list_conversations(
+    request: Request,
+    response: Response,
     skip: int = 0,
     limit: int = 50,
     db: AsyncSession = Depends(get_db),
 ):
     """List all conversations, newest first."""
     repo = ConversationRepository(db)
-    conversations, total = await repo.list_conversations(skip=skip, limit=limit)
+    owner_key = await get_user_key(request, response)
+    conversations, total = await repo.list_conversations(
+        skip=skip, limit=limit, owner_key=owner_key
+    )
     return ConversationListOut(
         conversations=[
             ConversationOut(
@@ -95,11 +104,14 @@ async def list_conversations(
 @router.get("/{conversation_id}", response_model=ConversationOut)
 async def get_conversation(
     conversation_id: UUID,
+    request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ):
     """Get a conversation with all its messages."""
     repo = ConversationRepository(db)
-    conv = await repo.get_conversation(conversation_id)
+    owner_key = await get_user_key(request, response)
+    conv = await repo.get_conversation(conversation_id, owner_key=owner_key)
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
     return ConversationOut(
@@ -124,11 +136,16 @@ async def get_conversation(
 async def update_conversation(
     conversation_id: UUID,
     body: ConversationUpdate,
+    request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ):
     """Update a conversation's title."""
     repo = ConversationRepository(db)
-    conv = await repo.update_conversation_title(conversation_id, body.title)
+    owner_key = await get_user_key(request, response)
+    conv = await repo.update_conversation_title(
+        conversation_id, body.title, owner_key=owner_key
+    )
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
     return ConversationOut(
@@ -142,10 +159,13 @@ async def update_conversation(
 @router.delete("/{conversation_id}", status_code=204)
 async def delete_conversation(
     conversation_id: UUID,
+    request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ):
     """Delete a conversation and all its messages."""
     repo = ConversationRepository(db)
-    deleted = await repo.delete_conversation(conversation_id)
+    owner_key = await get_user_key(request, response)
+    deleted = await repo.delete_conversation(conversation_id, owner_key=owner_key)
     if not deleted:
         raise HTTPException(status_code=404, detail="Conversation not found")

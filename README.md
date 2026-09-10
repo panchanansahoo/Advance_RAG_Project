@@ -93,13 +93,13 @@ User Query → Embedding → Vector Search → Top-K Chunks → LLM + Context �
 ## 📋 Development Phases
 
 - [x] **Phase 1** — Baseline RAG (PDF → chunks → embeddings → vector search → LLM)
-- [ ] **Phase 2** — Hybrid Search (BM25 + reranking + query rewriting)
-- [ ] **Phase 3** — Multimodal (OCR + VLM for images/charts/diagrams)
-- [ ] **Phase 4** — Structured Data (CSV/Excel via Pandas/SQL)
-- [ ] **Phase 5** — Knowledge Graph (Neo4j + multi-hop reasoning)
-- [ ] **Phase 6** — Agentic RAG (planner + self-correction + tools)
-- [ ] **Phase 7** — Reliability (citations + contradiction detection)
-- [ ] **Phase 8** — Evaluation (RAGAS benchmarks + dashboard)
+- [x] **Phase 2** — Hybrid Search (BM25 + reranking + query rewriting)
+- [x] **Phase 3** — Multimodal (OCR + VLM for images/charts/diagrams)
+- [x] **Phase 4** — Structured Data (CSV/Excel via Pandas Agent)
+- [x] **Phase 5** — Knowledge Graph (Neo4j + multi-hop reasoning)
+- [x] **Phase 6** — Agentic RAG (planner + self-correction + tools)
+- [x] **Phase 7** — Reliability (citations + contradiction detection)
+- [x] **Phase 8** — Evaluation (RAGAS benchmarks + experiment comparison)
 
 ## 📄 License
 

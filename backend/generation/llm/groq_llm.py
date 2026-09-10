@@ -1,5 +1,5 @@
 """
-OpenAI LLM provider with retry logic, timeouts, and token usage tracking.
+Groq LLM provider with retry logic, timeouts, and token usage tracking.
 """
 
 from __future__ import annotations
@@ -18,13 +18,13 @@ _RETRY_DELAYS = [1.0, 2.0, 4.0]  # Exponential backoff
 _DEFAULT_TIMEOUT = 60  # seconds
 
 
-class OpenAILLM(BaseLLM):
-    """LLM provider using OpenAI's chat completions API with retry and timeout."""
+class GroqLLM(BaseLLM):
+    """LLM provider using Groq's chat completions API with retry and timeout."""
 
     def __init__(
         self,
         api_key: str,
-        model: str = "gpt-4o-mini",
+        model: str = "llama-3.3-70b-versatile",
         temperature: float = 0.1,
         max_tokens: int = 2048,
         base_url: Optional[str] = None,
@@ -41,8 +41,8 @@ class OpenAILLM(BaseLLM):
 
     def _get_client(self):
         if self._client is None:
-            from openai import AsyncOpenAI
-            self._client = AsyncOpenAI(
+            from groq import AsyncGroq
+            self._client = AsyncGroq(
                 api_key=self._api_key,
                 base_url=self._base_url,
                 timeout=self._timeout,
@@ -76,17 +76,17 @@ class OpenAILLM(BaseLLM):
                 tokens_used = response.usage.total_tokens if response.usage else 0
                 self._total_tokens_used += tokens_used
                 logger.info(
-                    "OpenAI response: model=%s, tokens=%d, attempt=%d",
+                    "Groq response: model=%s, tokens=%d, attempt=%d",
                     self._model, tokens_used, attempt + 1,
                 )
                 return result
 
             except asyncio.TimeoutError:
                 last_error = TimeoutError(
-                    f"OpenAI API call timed out after {self._timeout}s"
+                    f"Groq API call timed out after {self._timeout}s"
                 )
                 logger.warning(
-                    "OpenAI timeout on attempt %d/%d", attempt + 1, _MAX_RETRIES
+                    "Groq timeout on attempt %d/%d", attempt + 1, _MAX_RETRIES
                 )
             except Exception as e:
                 last_error = e
@@ -99,7 +99,7 @@ class OpenAILLM(BaseLLM):
                 if not is_transient:
                     raise  # Non-transient errors fail immediately
                 logger.warning(
-                    "OpenAI transient error on attempt %d/%d: %s",
+                    "Groq transient error on attempt %d/%d: %s",
                     attempt + 1, _MAX_RETRIES, e,
                 )
 
@@ -107,7 +107,7 @@ class OpenAILLM(BaseLLM):
             if attempt < _MAX_RETRIES - 1:
                 await asyncio.sleep(_RETRY_DELAYS[attempt])
 
-        raise last_error or RuntimeError("OpenAI LLM failed after all retries")
+        raise last_error or RuntimeError("Groq LLM failed after all retries")
 
     async def generate_stream(
         self,
@@ -142,10 +142,10 @@ class OpenAILLM(BaseLLM):
 
             except asyncio.TimeoutError:
                 last_error = TimeoutError(
-                    f"OpenAI API stream timed out after {self._timeout}s"
+                    f"Groq API stream timed out after {self._timeout}s"
                 )
                 logger.warning(
-                    "OpenAI stream timeout on attempt %d/%d", attempt + 1, _MAX_RETRIES
+                    "Groq stream timeout on attempt %d/%d", attempt + 1, _MAX_RETRIES
                 )
             except Exception as e:
                 last_error = e
@@ -157,14 +157,14 @@ class OpenAILLM(BaseLLM):
                 if not is_transient:
                     raise
                 logger.warning(
-                    "OpenAI stream transient error on attempt %d/%d: %s",
+                    "Groq stream transient error on attempt %d/%d: %s",
                     attempt + 1, _MAX_RETRIES, e,
                 )
 
             if attempt < _MAX_RETRIES - 1:
                 await asyncio.sleep(_RETRY_DELAYS[attempt])
 
-        raise last_error or RuntimeError("OpenAI LLM stream failed after all retries")
+        raise last_error or RuntimeError("Groq LLM stream failed after all retries")
 
     @property
     def model_name(self) -> str:

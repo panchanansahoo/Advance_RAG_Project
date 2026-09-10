@@ -18,6 +18,17 @@ from typing import Any, Dict, List, Set
 logger = logging.getLogger(__name__)
 
 
+def _count_tokens(text: str) -> int:
+    """Count tokens accurately using tiktoken, with fallback to word-based estimate."""
+    try:
+        import tiktoken
+        enc = tiktoken.get_encoding("cl100k_base")
+        return len(enc.encode(text))
+    except Exception:
+        # Fallback: rough word-based estimate (~1.33 tokens per word)
+        return int(len(text.split()) * 1.33)
+
+
 class ContextCompressor:
     """
     Compresses the set of retrieved chunks to reduce token usage
@@ -83,6 +94,7 @@ class ContextCompressor:
             tokens = set(content.lower().split())
 
             is_duplicate = False
+            min_sim_seen = 1.0
             for seen_set in seen_token_sets:
                 # Jaccard similarity
                 if not tokens or not seen_set:
@@ -90,6 +102,7 @@ class ContextCompressor:
                 intersection = tokens & seen_set
                 union = tokens | seen_set
                 similarity = len(intersection) / len(union) if union else 0
+                min_sim_seen = min(min_sim_seen, similarity)
 
                 if similarity >= self.similarity_threshold:
                     is_duplicate = True
@@ -126,7 +139,7 @@ class ContextCompressor:
 
         for chunk in chunks:
             content = self._get_content(chunk)
-            chunk_tokens = len(content.split())
+            chunk_tokens = _count_tokens(content)
 
             if total_tokens + chunk_tokens > self.max_tokens and result:
                 break

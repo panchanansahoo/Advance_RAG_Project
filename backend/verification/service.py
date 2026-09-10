@@ -9,6 +9,7 @@ Improvements (Task 1.4):
 - Enhanced contradiction detection with source-authority comparison (PRD §19)
 """
 
+import asyncio
 import json
 import logging
 from typing import List, Dict, Any, Optional
@@ -23,6 +24,11 @@ logger = logging.getLogger(__name__)
 
 class VerificationService:
     """Verifies drafted answers against retrieved evidence."""
+
+    # Maximum time to spend on verification before falling through
+    VERIFICATION_TIMEOUT = 30  # seconds
+    # Maximum characters per evidence source to prevent token overflow
+    MAX_EVIDENCE_LENGTH = 8000
 
     def __init__(self):
         self.settings = get_settings()
@@ -59,6 +65,30 @@ class VerificationService:
                 is_fully_supported=True, revised_answer=drafted_answer
             )
 
+        # Run verification with timeout to prevent blocking
+        try:
+            return await asyncio.wait_for(
+                self._do_verify(query, drafted_answer, citations, full_evidence_texts),
+                timeout=self.VERIFICATION_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Verification timed out after %ds — passing through unverified",
+                self.VERIFICATION_TIMEOUT,
+            )
+            return VerificationResult(
+                is_fully_supported=True, revised_answer=drafted_answer
+            )
+
+    async def _do_verify(
+        self,
+        query: str,
+        drafted_answer: str,
+        citations: List[Citation],
+        full_evidence_texts: Optional[List[str]] = None,
+    ) -> VerificationResult:
+        """Core verification logic, called within timeout wrapper."""
+
         llm = get_llm()
 
         system_prompt = (
@@ -66,16 +96,17 @@ class VerificationService:
             "Your job is to evaluate a drafted answer against the provided evidence.\n\n"
             "Rules:\n"
             "1. Extract the main factual claims made in the drafted answer.\n"
-            "2. Check if EVERY claim is explicitly supported by the provided evidence. "
-            "If a claim is not in the evidence, it is hallucinated (is_supported: false).\n"
-            "3. Look for contradictions between different evidence sources. "
+            "2. For claims that cite or purport to come from the provided evidence, check if EVERY claim is explicitly supported by the provided evidence. "
+            "If a claim is purported to come from evidence but is not supported, it is unsupported (is_supported: false).\n"
+            "3. If a claim or section is explicitly labeled as general knowledge or outside document context, do NOT mark it as an unsupported hallucination, as long as it does not falsely cite or attribute itself to the documents.\n"
+            "4. Look for contradictions between different evidence sources. "
             "If Source A says X and Source B says Y, and the drafted answer doesn't "
             "explicitly address this conflict, flag it.\n"
-            "4. When contradictions are found, evaluate source authority:\n"
+            "5. When contradictions are found, evaluate source authority:\n"
             "   - More recent sources are generally more reliable\n"
             "   - Official/primary sources outweigh secondary sources\n"
             "   - Quantitative data should be cross-checked for consistency\n"
-            "5. Return a JSON object matching this schema:\n"
+            "6. Return a JSON object matching this schema:\n"
             "{\n"
             '  "is_fully_supported": true/false,\n'
             '  "claims": [{"text": "claim", "is_supported": true/false, "reasoning": "why"}],\n'
@@ -87,11 +118,15 @@ class VerificationService:
         if full_evidence_texts:
             evidence_parts = []
             for i, evidence in enumerate(full_evidence_texts):
+                # Cap evidence length to prevent token overflow
+                trimmed = evidence[:self.MAX_EVIDENCE_LENGTH]
+                if len(evidence) > self.MAX_EVIDENCE_LENGTH:
+                    trimmed += f"\n[... {len(evidence) - self.MAX_EVIDENCE_LENGTH} chars truncated]"
                 # Use citation info if available to label the evidence
                 source_label = f"Source {i + 1}"
                 if i < len(citations):
                     source_label = f"{citations[i].document_name} (Chunk: {citations[i].chunk_id})"
-                evidence_parts.append(f"--- {source_label} ---\n{evidence}")
+                evidence_parts.append(f"--- {source_label} ---\n{trimmed}")
             evidence_text = "\n\n".join(evidence_parts)
         else:
             evidence_text = "\n\n".join(

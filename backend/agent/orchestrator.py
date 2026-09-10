@@ -8,10 +8,13 @@ Implements:
 - Self-correction loop with evidence confidence evaluation (PRD §15)
 - Intelligent observation truncation preserving sentence boundaries (fix for 2.1)
 - Sub-question tracking and synthesis
+- Loop-detection guardrail to prevent infinite spinning
+- Improved token budget estimation
 """
 
 import json
 import logging
+import time
 from typing import List, Dict, Any, Optional
 from uuid import UUID
 
@@ -28,6 +31,17 @@ CONFIDENCE_LOW = 0.25          # Below this → trigger self-correction
 MAX_RETRIES = 2                # Max self-correction retries per sub-question
 
 
+def _estimate_tokens(text: str) -> int:
+    """Estimate token count. Uses tiktoken if available, else falls back to word-based."""
+    try:
+        import tiktoken
+        enc = tiktoken.get_encoding("cl100k_base")
+        return len(enc.encode(text))
+    except Exception:
+        # Fallback: ~0.75 words per token for English text
+        return int(len(text.split()) * 1.33)
+
+
 class AgentOrchestrator:
     """Iterative Agent Loop for complex question answering."""
 
@@ -36,12 +50,16 @@ class AgentOrchestrator:
         self.hybrid_tool = HybridSearchTool()
         self.graph_tool = GraphSearchTool()
         self.pandas_tool = PandasQATool()
+        self._token_usage = 0
+        self._token_budget = self.settings.agent_token_budget
 
     async def run(
         self,
         query: str,
         document_ids: Optional[List[UUID]] = None,
         structured_file_paths: Optional[List[str]] = None,
+        conversation_messages: Optional[list] = None,
+        owner_key: Optional[str] = None,
     ) -> AgentState:
         """
         Execute the agent loop until a final answer is generated or max iterations reached.
@@ -55,6 +73,8 @@ class AgentOrchestrator:
            d. Self-correct if confidence is too low (rewrite & re-search)
         3. Synthesize final answer from all sub-answers
         """
+        self._token_usage = 0  # Reset per-run
+        run_start = time.perf_counter()
         state = AgentState(original_query=query)
         max_iters = self.settings.agent_max_iterations
 
@@ -72,6 +92,9 @@ class AgentOrchestrator:
 
         # ── Iterate over sub-questions ──────────────────────
         global_iter = 0
+        # Loop-detection: track recent (tool, query) pairs to detect spinning
+        recent_actions: List[tuple] = []
+
         for sub_q in state.sub_questions:
             state.current_sub_question = sub_q
             state.retry_count = 0
@@ -83,19 +106,47 @@ class AgentOrchestrator:
                     break
                 global_iter += 1
 
+                # Token budget guard
+                if self._token_usage >= self._token_budget:
+                    logger.warning(
+                        "Token budget exhausted (%d/%d). Forcing final answer.",
+                        self._token_usage,
+                        self._token_budget,
+                    )
+                    break
+
+                step_start = time.perf_counter()
                 logger.info(
-                    "Agent iteration %d | Sub-question: '%s'",
+                    "Agent iteration %d | Sub-question: '%s' | Tokens used: %d/%d",
                     global_iter,
                     sub_q[:80],
+                    self._token_usage,
+                    self._token_budget,
                 )
 
                 # 1. Plan next action
-                action = await self._plan_next_action(state, structured_file_paths)
+                action = await self._plan_next_action(state, structured_file_paths, conversation_messages)
 
                 if not action or action.action.tool_name == "final_answer":
                     # Sub-question resolved — record the sub-answer
                     sub_answer = action.action.query if action else ""
                     state.sub_answers[sub_q] = sub_answer
+                    sub_q_resolved = True
+                    break
+
+                # Loop-detection guardrail: if same (tool, query) appears 3 times, force final answer
+                action_key = (action.action.tool_name, action.action.query.strip().lower())
+                recent_actions.append(action_key)
+                if recent_actions.count(action_key) >= 3:
+                    logger.warning(
+                        "Loop detected: tool=%s, query='%s' repeated 3 times. Forcing final answer.",
+                        action.action.tool_name,
+                        action.action.query[:60],
+                    )
+                    evidence_summary = "\n".join(
+                        s.observation[:500] for s in state.steps[-3:]
+                    )
+                    state.sub_answers[sub_q] = f"[Partial evidence] {evidence_summary}"
                     sub_q_resolved = True
                     break
 
@@ -105,12 +156,14 @@ class AgentOrchestrator:
                     action.action.query,
                     document_ids,
                     structured_file_paths,
+                    owner_key,
                 )
 
                 # 3. Compute step confidence
                 step_confidence = self._compute_confidence(relevance_scores)
 
                 # 4. Update state
+                step_elapsed = time.perf_counter() - step_start
                 step = AgentStep(
                     tool=action.action.tool_name,
                     query=action.action.query,
@@ -121,6 +174,11 @@ class AgentOrchestrator:
                 state.steps.append(step)
                 if new_citations:
                     state.citations.extend(new_citations)
+
+                logger.info(
+                    "Step %d completed in %.2fs | tool=%s | confidence=%.3f",
+                    global_iter, step_elapsed, action.action.tool_name, step_confidence,
+                )
 
                 # 5. Self-correction check (PRD §15)
                 if step_confidence < CONFIDENCE_LOW and state.retry_count < MAX_RETRIES:
@@ -152,6 +210,13 @@ class AgentOrchestrator:
         # ── Final answer synthesis ──────────────────────────
         state.current_sub_question = None
         state.final_answer = await self._generate_final_answer(state)
+
+        total_elapsed = time.perf_counter() - run_start
+        logger.info(
+            "Agent run completed in %.2fs | %d steps | confidence=%.3f | tokens=%d/%d",
+            total_elapsed, len(state.steps), state.overall_confidence,
+            self._token_usage, self._token_budget,
+        )
 
         return state
 
@@ -195,6 +260,7 @@ class AgentOrchestrator:
                 max_tokens=400,
                 response_format={"type": "json_object"},
             )
+            self._token_usage += _estimate_tokens(response) + _estimate_tokens(query)
             data = json.loads(response)
             if data.get("needs_decomposition") and data.get("sub_questions"):
                 return data["sub_questions"][:4]  # Cap at 4 sub-questions
@@ -206,7 +272,8 @@ class AgentOrchestrator:
     # ── Planning ────────────────────────────────────────────
 
     async def _plan_next_action(
-        self, state: AgentState, structured_file_paths: Optional[List[str]]
+        self, state: AgentState, structured_file_paths: Optional[List[str]],
+        conversation_messages: Optional[list] = None,
     ) -> Optional[AgentAction]:
         """Call LLM to decide what to do next based on current state."""
         llm = get_llm()
@@ -227,7 +294,8 @@ class AgentOrchestrator:
             "the evidence may be poor. You SHOULD rewrite or rephrase the query and search again.\n"
             "- If the observation says 'No relevant documents found', try a broader or rephrased query.\n"
             "- If you see contradictory evidence, search for clarification before giving a final answer.\n"
-            "- If you have gathered sufficient high-quality evidence, call 'final_answer'.\n\n"
+            "- If you have gathered sufficient high-quality evidence, call 'final_answer'.\n"
+            "- Do NOT repeat the exact same tool and query combination you already tried.\n\n"
             "Respond in JSON matching this schema:\n"
             '{"action": {"tool_name": "hybrid_search|graph_search|pandas_qa|final_answer", '
             '"query": "tool input", "reasoning": "why"}}'
@@ -262,6 +330,17 @@ class AgentOrchestrator:
             {"role": "user", "content": "What is the next action? Return JSON only."}
         )
 
+        # Inject conversation context if available
+        if conversation_messages and not state.steps:
+            conv_context = "\n".join(
+                f"{getattr(m, 'role', 'user').title()}: {getattr(m, 'content', str(m))}"
+                for m in conversation_messages[-6:]
+            )
+            messages.insert(1, {
+                "role": "user",
+                "content": f"Prior conversation context (for follow-up understanding):\n{conv_context}",
+            })
+
         try:
             response = await llm.generate(
                 messages,
@@ -271,6 +350,9 @@ class AgentOrchestrator:
             )
 
             data = json.loads(response)
+            self._token_usage += _estimate_tokens(response) + sum(
+                _estimate_tokens(m.get("content", "")) for m in messages
+            )
             return AgentAction(**data)
 
         except Exception as e:
@@ -285,13 +367,14 @@ class AgentOrchestrator:
         query: str,
         document_ids: Optional[List[UUID]],
         structured_file_paths: Optional[List[str]],
+        owner_key: Optional[str] = None,
     ) -> tuple[str, List[Dict[str, Any]], List[float]]:
         """Dispatch to the appropriate tool wrapper. Returns (observation, citations, scores)."""
 
         logger.info("Executing Tool: %s with query: '%s'", tool_name, query)
 
         if tool_name == "hybrid_search":
-            return await self.hybrid_tool.execute(query, document_ids)
+            return await self.hybrid_tool.execute(query, document_ids, owner_key=owner_key)
 
         elif tool_name == "graph_search":
             observation, scores = await self.graph_tool.execute(query)
@@ -311,7 +394,8 @@ class AgentOrchestrator:
         Compute a confidence score (0-1) from per-chunk relevance scores.
 
         Uses a weighted average that gives more weight to the top-scoring chunk,
-        penalizing retrievals where all scores are uniformly low.
+        with a penalty for very few results (single-chunk retrievals shouldn't
+        score 1.0 without very high relevance).
         """
         if not relevance_scores:
             return 0.0
@@ -322,7 +406,11 @@ class AgentOrchestrator:
         weighted_sum = sum(s * w for s, w in zip(sorted_scores, weights))
         total_weight = sum(weights)
 
-        return min(weighted_sum / total_weight, 1.0)
+        raw_confidence = min(weighted_sum / total_weight, 1.0)
+
+        # Penalty for very few results: reduce confidence if only 1-2 chunks found
+        count_penalty = min(len(relevance_scores) / 3.0, 1.0)
+        return raw_confidence * count_penalty
 
     # ── Final Answer Generation ─────────────────────────────
 
@@ -331,13 +419,20 @@ class AgentOrchestrator:
         llm = get_llm()
 
         system_prompt = (
-            "You are a helpful answering assistant. Based on the gathered evidence, "
-            "provide a comprehensive and accurate answer to the original query.\n\n"
+            "You are an Advanced AI Answering Assistant known for providing **thorough, in-depth, and comprehensive** answers. "
+            "Based on the gathered evidence, provide a detailed, well-structured, and expert-level answer to the original query.\n\n"
             "Rules:\n"
-            "- If the evidence contains contradictions, explain them clearly.\n"
-            "- If the evidence is insufficient, explicitly state that.\n"
-            "- Cite evidence by referencing the source document names.\n"
-            "- If sub-questions were answered, synthesize them into a cohesive final answer.\n"
+            "- **Be thorough**: Go beyond surface-level summaries. Explain concepts, provide context, give examples, and cover nuances. "
+            "Your answer should satisfy a knowledgeable professional.\n"
+            "- If the evidence contains contradictions, explain them clearly with specifics from each source.\n"
+            "- If the gathered evidence only partially answers the query or lacks direct information, DO NOT give a blunt refusal. Instead, organize your response into:\n"
+            "  1. **Document Context & Findings**: What relevant or related facts exist in the documents (citing source document names). Thoroughly extract all useful information.\n"
+            "  2. **Answer from AI Knowledge**: A **detailed, comprehensive, expert-level** answer to the user's question using general AI knowledge "
+            "(under callout: '> 💡 **General Knowledge Answer**: ...'). Include definitions, explanations, examples, comparisons, and practical insights.\n"
+            "  3. **Recommended Plan & Next Steps**: Actionable next steps, suggestions on specific data or files to upload for grounded verification, or recommended follow-up questions.\n"
+            "- Cite document evidence by referencing the source document names.\n"
+            "- If sub-questions were answered, synthesize them into a cohesive, well-structured final answer that reads as a unified response.\n"
+            "- Use rich formatting: headings, subheadings, bullet points, numbered lists, tables, and callouts.\n"
             f"- Overall evidence confidence: {state.overall_confidence:.2f}/1.00"
         )
 
@@ -373,11 +468,15 @@ class AgentOrchestrator:
                     {"role": "user", "content": user_prompt},
                 ],
                 temperature=0.2,
+                max_tokens=4096,
             )
             return response
         except Exception as e:
             logger.error("Failed to generate final answer: %s", e)
-            return "An error occurred while generating the final answer."
+            return (
+                "I analyzed the documents, but encountered difficulty formulating a complete final response. "
+                "Please try asking your question again or rephrasing."
+            )
 
 
 # ── Utility Functions ───────────────────────────────────────

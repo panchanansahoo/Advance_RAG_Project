@@ -8,6 +8,7 @@ uvicorn[standard]>=0.34.0
 python-multipart>=0.0.18
 pydantic>=2.10.4
 pydantic-settings>=2.7.1
+slowapi>=0.1.10
 
 # ── Database & Vector Store ────────────────────────────────
 SQLAlchemy>=2.0.36
@@ -35,6 +36,7 @@ torch>=2.5.1
 # ── LLM Providers ──────────────────────────────────────────
 openai>=1.58.1
 google-generativeai>=0.8.4
+groq>=0.11.0
 
 # ── NLP / Chunking / Search ────────────────────────────────
 nltk>=3.9.1

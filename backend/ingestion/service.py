@@ -147,6 +147,7 @@ class IngestionService:
                     "section": chunk_data.section,
                     "source_filename": document.filename,
                     "chunk_index": chunk_data.chunk_index,
+                    "owner_key": document.owner_key,
                 })
 
                 # DB model
@@ -236,8 +237,13 @@ class IngestionService:
                 str(e),
                 exc_info=True,
             )
+            from backend.utils.error_sanitizer import sanitize_error_message
+            friendly_err = sanitize_error_message(
+                e,
+                default_fallback="Unable to process this document. The file may be damaged, password-protected, or in an unsupported format.",
+            )
             await doc_repo.update_status(
                 document_id,
                 ProcessingStatus.FAILED,
-                error_message=str(e),
+                error_message=friendly_err,
             )

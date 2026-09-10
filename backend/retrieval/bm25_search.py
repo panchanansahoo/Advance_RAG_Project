@@ -160,6 +160,7 @@ class BM25Index:
         query: str,
         top_k: int = 20,
         document_ids: Optional[List[str]] = None,
+        owner_key: Optional[str] = None,
     ) -> List[BM25SearchResult]:
         """
         Search the BM25 index.
@@ -191,6 +192,8 @@ class BM25Index:
 
             # Apply document filter
             if document_ids and payload.get("document_id") not in document_ids:
+                continue
+            if owner_key is not None and payload.get("owner_key") != owner_key:
                 continue
 
             scored_results.append((score, payload))

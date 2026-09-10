@@ -79,6 +79,16 @@ class QueryRouter:
             if not self._looks_complex(query):
                 return RouteType.RAG
 
+        # Heuristic fast-path: structured data keywords + structured files available
+        if has_structured and self._looks_structured(query):
+            logger.info("Fast-path routing to structured_data (heuristic match)")
+            return RouteType.STRUCTURED_DATA
+
+        # Heuristic fast-path: visual keywords + image files available
+        if has_visual and self._looks_visual(query):
+            logger.info("Fast-path routing to visual (heuristic match)")
+            return RouteType.VISUAL
+
         try:
             llm = get_llm()
 
@@ -151,6 +161,29 @@ class QueryRouter:
             "how does * relate to", "what caused",
         ]
         return any(signal in lower for signal in complexity_signals)
+
+    @staticmethod
+    def _looks_structured(query: str) -> bool:
+        """Quick heuristic for numerical/analytical queries suited to pandas."""
+        lower = query.lower()
+        structured_signals = [
+            "total", "average", "mean", "median", "sum", "count",
+            "how many", "percentage", "max", "min", "highest", "lowest",
+            "top ", "bottom ", "rank", "sort", "group by", "aggregate",
+            "calculate", "compute", "spreadsheet", "column",
+        ]
+        return any(signal in lower for signal in structured_signals)
+
+    @staticmethod
+    def _looks_visual(query: str) -> bool:
+        """Quick heuristic for visual/image-related queries."""
+        lower = query.lower()
+        visual_signals = [
+            "image", "picture", "photo", "chart", "graph", "diagram",
+            "screenshot", "visual", "figure", "drawing", "illustration",
+            "what does the", "describe the", "show me", "look like",
+        ]
+        return any(signal in lower for signal in visual_signals)
 
 
 # ── Singleton accessor (Task 4.1) ───────────────────────────

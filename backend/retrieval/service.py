@@ -73,6 +73,7 @@ class RetrievalService:
         query: str,
         top_k: Optional[int] = None,
         document_ids: Optional[List[UUID]] = None,
+        owner_key: Optional[str] = None,
     ) -> List[RetrievedChunk]:
         """
         Retrieve and enrich chunks using the full Phase 2 pipeline.
@@ -121,6 +122,7 @@ class RetrievalService:
             query=effective_query,
             top_k=fetch_k,
             document_ids=document_ids,
+            owner_key=owner_key,
         )
 
         if not hybrid_results:
@@ -128,7 +130,7 @@ class RetrievalService:
             hybrid_results = []
 
         # ── Step 2.5: Graph Retrieval (Phase 5) ─────────────
-        if settings.graph_extraction_enabled:
+        if settings.graph_extraction_enabled and owner_key is None:
             try:
                 from backend.retrieval.graph_retriever import GraphRetriever
                 graph_retriever = GraphRetriever()

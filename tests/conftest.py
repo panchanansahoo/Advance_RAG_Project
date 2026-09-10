@@ -21,6 +21,7 @@ def mock_settings():
         with patch.dict("os.environ", {
             "APP_ENV": "test",
             "DEBUG": "true",
+            "DATABASE_PROVIDER": "sqlite",
             "POSTGRES_HOST": "localhost",
             "POSTGRES_PORT": "5432",
             "POSTGRES_USER": "test_user",

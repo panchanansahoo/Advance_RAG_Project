@@ -17,6 +17,8 @@ from fastapi import (
     File,
     Form,
     HTTPException,
+    Request,
+    Response,
     UploadFile,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,6 +29,7 @@ from backend.database.models import Document
 from backend.database.repositories import DocumentRepository
 from backend.ingestion.file_validator import FileValidator, FileValidationError
 from backend.ingestion.service import IngestionService
+from backend.api.auth import get_user_key
 from backend.schemas.common import ProcessingStatus
 from backend.schemas.documents import (
     DocumentListResponse,
@@ -41,6 +44,8 @@ router = APIRouter(prefix="/api/v1/documents", tags=["Documents"])
 @router.post("/upload", response_model=DocumentResponse, status_code=201)
 async def upload_document(
     background_tasks: BackgroundTasks,
+    request: Request,
+    response: Response,
     file: UploadFile = File(...),
     title: Optional[str] = Form(None),
     description: Optional[str] = Form(None),
@@ -54,6 +59,7 @@ async def upload_document(
     """
     validator = FileValidator()
     settings = get_settings()
+    owner_key = await get_user_key(request, response)
 
     # Validate file
     try:
@@ -65,7 +71,8 @@ async def upload_document(
 
         ext = validator.validate(filename=file.filename, file_size=file_size)
     except FileValidationError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        from backend.utils.error_sanitizer import sanitize_error_message
+        raise HTTPException(status_code=400, detail=sanitize_error_message(str(e)))
 
     # Save file to disk
     doc_id = uuid.uuid4()
@@ -77,12 +84,17 @@ async def upload_document(
         with open(file_path, "wb") as f:
             f.write(contents)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to save file: {e}")
+        logger.error("Failed to save uploaded file %s: %s", file.filename, e, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="We were unable to save the uploaded file. Please verify that the file is not locked or open in another program and try again.",
+        )
 
     # Create document record
     doc_type = validator.get_document_type(ext)
     document = Document(
         id=doc_id,
+        owner_key=owner_key,
         filename=file.filename,
         title=title or Path(file.filename).stem,
         description=description,
@@ -119,13 +131,16 @@ async def upload_document(
 
 @router.get("/", response_model=DocumentListResponse)
 async def list_documents(
+    request: Request,
+    response: Response,
     skip: int = 0,
     limit: int = 50,
     db: AsyncSession = Depends(get_db),
 ):
     """List all uploaded documents."""
     doc_repo = DocumentRepository(db)
-    documents, total = await doc_repo.list_all(skip=skip, limit=limit)
+    owner_key = await get_user_key(request, response)
+    documents, total = await doc_repo.list_all(skip=skip, limit=limit, owner_key=owner_key)
 
     return DocumentListResponse(
         documents=[
@@ -153,11 +168,14 @@ async def list_documents(
 @router.get("/{document_id}", response_model=DocumentResponse)
 async def get_document(
     document_id: uuid.UUID,
+    request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ):
     """Get a specific document by ID."""
     doc_repo = DocumentRepository(db)
-    doc = await doc_repo.get_by_id(document_id)
+    owner_key = await get_user_key(request, response)
+    doc = await doc_repo.get_by_id_for_owner(document_id, owner_key=owner_key)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
@@ -181,11 +199,14 @@ async def get_document(
 @router.delete("/{document_id}", status_code=204)
 async def delete_document(
     document_id: uuid.UUID,
+    request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ):
     """Delete a document and all its associated data."""
     doc_repo = DocumentRepository(db)
-    doc = await doc_repo.get_by_id(document_id)
+    owner_key = await get_user_key(request, response)
+    doc = await doc_repo.get_by_id_for_owner(document_id, owner_key=owner_key)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
@@ -196,6 +217,14 @@ async def delete_document(
     except Exception as e:
         logger.warning("Failed to delete vectors: %s", e)
 
+    # Remove from BM25 index
+    try:
+        from backend.retrieval.bm25_search import get_bm25_index
+        bm25_index = get_bm25_index()
+        bm25_index.remove_document(str(document_id))
+    except Exception as e:
+        logger.warning("Failed to remove document from BM25 index: %s", e)
+
     # Delete file from disk
     try:
         upload_dir = Path(doc.file_path).parent
@@ -205,7 +234,7 @@ async def delete_document(
         logger.warning("Failed to delete file: %s", e)
 
     # Delete from database (cascades to chunks)
-    await doc_repo.delete(document_id)
+    await doc_repo.delete(document_id, owner_key=owner_key)
     logger.info("Document deleted: %s", document_id)
 
 
@@ -223,7 +252,10 @@ async def _process_document(document_id: uuid.UUID):
     try:
         service = IngestionService(db_session=session)
         await service.process_document(document_id)
+        await session.commit()
     except Exception as e:
+        await session.rollback()
         logger.error("Background processing failed for %s: %s", document_id, e)
     finally:
         await session.close()
+

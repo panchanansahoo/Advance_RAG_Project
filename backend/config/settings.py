@@ -6,11 +6,14 @@ Uses Pydantic Settings for validation, type coercion, and defaults.
 from __future__ import annotations
 
 import json
+import logging
+import urllib.parse
 from pathlib import Path
 from typing import List, Optional
 
-from pydantic import field_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine.url import make_url
 
 
 class Settings(BaseSettings):
@@ -28,11 +31,21 @@ class Settings(BaseSettings):
     app_env: str = "development"
     debug: bool = True
     log_level: str = "INFO"
+    auth_secret: str = "change-this-auth-secret-in-production"
+    auth_frontend_url: str = "http://localhost:8000"
+    supabase_url: Optional[str] = None
+    supabase_anon_key: Optional[str] = None
+    google_client_id: Optional[str] = None
+    google_client_secret: Optional[SecretStr] = None
+    github_client_id: Optional[str] = None
+    github_client_secret: Optional[SecretStr] = None
     backend_host: str = "0.0.0.0"
     backend_port: int = 8000
     cors_origins: List[str] = [
         "http://localhost:3000",
+        "http://127.0.0.1:3000",
         "http://localhost:8000",
+        "http://127.0.0.1:8000",
         "http://127.0.0.1:5500",
     ]
 
@@ -43,20 +56,86 @@ class Settings(BaseSettings):
             return json.loads(v)
         return v
 
-    # ── PostgreSQL ──────────────────────────────────────────
+    # ── Database / PostgreSQL / Supabase ────────────────────
+    database_provider: str = "postgres"  # "postgres" or "sqlite"
+    database_url_override: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "database_url",
+            "supabase_db_url",
+            "postgres_url",
+            "supabase_database_url",
+        ),
+    )
     postgres_host: str = "localhost"
     postgres_port: int = 5432
     postgres_user: str = "rag_user"
     postgres_password: str = "rag_password_change_me"
     postgres_db: str = "advanced_rag"
+    postgres_ssl: Optional[str] = "require"
 
     @property
     def database_url(self) -> str:
-        return "sqlite+aiosqlite:///./advanced_rag.db"
+        """Async SQLAlchemy connection URL (asyncpg for PostgreSQL)."""
+        if (
+            self.database_provider.lower() == "sqlite"
+            or (self.app_env.lower() == "test" and not self.database_url_override)
+        ):
+            return "sqlite+aiosqlite:///./advanced_rag.db"
+
+        if self.database_url_override:
+            url_str = self.database_url_override.strip()
+            if url_str.startswith("postgres://"):
+                url_str = "postgresql+asyncpg://" + url_str[len("postgres://") :]
+            elif url_str.startswith("postgresql://"):
+                url_str = "postgresql+asyncpg://" + url_str[len("postgresql://") :]
+            elif url_str.startswith("sqlite"):
+                return url_str
+
+            try:
+                u = make_url(url_str)
+                query = dict(u.query)
+                if "sslmode" in query:
+                    query.pop("sslmode")
+                u = u._replace(query=query)
+                return u.render_as_string(hide_password=False)
+            except Exception:
+                return url_str
+
+        user = urllib.parse.quote_plus(self.postgres_user)
+        password = urllib.parse.quote_plus(self.postgres_password)
+        return (
+            f"postgresql+asyncpg://{user}:{password}@"
+            f"{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+        )
 
     @property
     def database_url_sync(self) -> str:
-        return "sqlite:///./advanced_rag.db"
+        """Synchronous SQLAlchemy connection URL (psycopg2 for PostgreSQL)."""
+        if (
+            self.database_provider.lower() == "sqlite"
+            or (self.app_env.lower() == "test" and not self.database_url_override)
+        ):
+            return "sqlite:///./advanced_rag.db"
+
+        if self.database_url_override:
+            url_str = self.database_url_override.strip()
+            if url_str.startswith("postgres://"):
+                url_str = "postgresql+psycopg2://" + url_str[len("postgres://") :]
+            elif url_str.startswith("postgresql+asyncpg://"):
+                url_str = "postgresql+psycopg2://" + url_str[len("postgresql+asyncpg://") :]
+            elif url_str.startswith("postgresql://"):
+                url_str = "postgresql+psycopg2://" + url_str[len("postgresql://") :]
+            elif url_str.startswith("sqlite"):
+                return url_str
+            return url_str
+
+        user = urllib.parse.quote_plus(self.postgres_user)
+        password = urllib.parse.quote_plus(self.postgres_password)
+        base = f"postgresql+psycopg2://{user}:{password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+        if self.postgres_ssl and self.postgres_ssl.lower() not in ("disable", "false", "0", "no"):
+            base += f"?sslmode={self.postgres_ssl}"
+        return base
 
     # ── Vector Database ─────────────────────────────────────
     vector_db_provider: str = "chroma"
@@ -77,14 +156,28 @@ class Settings(BaseSettings):
     llm_max_tokens: int = 2048
 
     # ── API Keys ────────────────────────────────────────────
-    openai_api_key: Optional[str] = None
-    google_api_key: Optional[str] = None
+    openai_api_key: Optional[SecretStr] = None
+    google_api_key: Optional[SecretStr] = None
+    groq_api_key: Optional[SecretStr] = None
+
+    @model_validator(mode="after")
+    def _warn_placeholder_keys(self) -> "Settings":
+        """Emit a startup warning if API keys look like placeholders."""
+        _log = logging.getLogger("backend.config")
+        placeholders = {"your-openai-api-key-here", "your-google-api-key-here", "", "changeme"}
+        if self.openai_api_key and self.openai_api_key.get_secret_value().lower() in placeholders:
+            _log.warning("OPENAI_API_KEY looks like a placeholder — OpenAI features will fail")
+        if self.google_api_key and self.google_api_key.get_secret_value().lower() in placeholders:
+            _log.warning("GOOGLE_API_KEY looks like a placeholder — Gemini features will fail")
+        if self.groq_api_key and self.groq_api_key.get_secret_value().lower() in placeholders:
+            _log.warning("GROQ_API_KEY looks like a placeholder — Groq features will fail")
+        return self
 
     # ── Ingestion ───────────────────────────────────────────
     upload_dir: str = "./uploads"
     max_file_size_mb: int = 50
     allowed_extensions: List[str] = [
-        ".pdf", ".txt", ".md", ".csv", ".xlsx", ".docx",
+        ".pdf", ".txt", ".md", ".csv", ".xlsx", ".xls", ".docx",
         ".png", ".jpg", ".jpeg",
     ]
 
@@ -111,7 +204,7 @@ class Settings(BaseSettings):
     chunk_overlap: int = 50
 
     # ── Retrieval ───────────────────────────────────────────
-    retrieval_top_k: int = 5
+    retrieval_top_k: int = 7
     retrieval_strategy: str = "hybrid"  # "vector", "bm25", "hybrid"
 
     # ── Hybrid Search (Phase 2) ────────────────────────────
@@ -124,7 +217,7 @@ class Settings(BaseSettings):
     # ── Reranker (Phase 2) ─────────────────────────────────
     reranker_enabled: bool = True
     reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
-    reranker_top_k: int = 5  # Final top-K after reranking
+    reranker_top_k: int = 7  # Final top-K after reranking
 
     # ── Query Processing (Phase 2) ─────────────────────────
     query_rewriting_enabled: bool = True
@@ -133,7 +226,7 @@ class Settings(BaseSettings):
 
     # ── Context Compression (Phase 2) ──────────────────────
     context_compression_enabled: bool = True
-    max_context_tokens: int = 3000  # Max tokens sent to LLM
+    max_context_tokens: int = 6000  # Max tokens sent to LLM
 
     # ── Multimodal Processing (Phase 3) ────────────────────
     ocr_enabled: bool = True
@@ -157,6 +250,7 @@ class Settings(BaseSettings):
     agentic_rag_enabled: bool = True  # Whether agentic RAG is enabled for adaptive routing
     agentic_rag_force: bool = False  # Global override: if True, forces all queries to agentic
     agent_max_iterations: int = 5  # Increased from 3 for self-correction room
+    agent_token_budget: int = 50000  # Max estimated tokens across all LLM calls per query
 
     # ── Reliability & Verification (Phase 7) ───────────────
     verification_enabled: bool = True

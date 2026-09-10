@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
@@ -37,7 +37,7 @@ class QueryResponse(BaseModel):
     query: str
     conversation_id: Optional[UUID] = None
     retrieval_metadata: Dict[str, Any] = Field(default_factory=dict)
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class ConversationMessage(BaseModel):
@@ -45,4 +45,4 @@ class ConversationMessage(BaseModel):
     role: str  # "user" or "assistant"
     content: str
     citations: List[Citation] = Field(default_factory=list)
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

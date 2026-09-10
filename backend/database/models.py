@@ -6,7 +6,7 @@ Covers: documents, chunks, conversations, messages, citations.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import (
     Boolean,
@@ -19,7 +19,7 @@ from sqlalchemy import (
     String,
     Text,
 )
-from sqlalchemy.dialects.postgresql import JSON, UUID
+from sqlalchemy import JSON, Uuid as UUID
 from sqlalchemy.orm import relationship
 
 from backend.database.connection import Base
@@ -32,6 +32,7 @@ class Document(Base):
     __tablename__ = "documents"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    owner_key = Column(String(512), nullable=True, index=True)
     filename = Column(String(512), nullable=False)
     title = Column(String(512), nullable=True)
     description = Column(Text, nullable=True)
@@ -48,11 +49,14 @@ class Document(Base):
     tags = Column(JSON, default=list)
     metadata_ = Column("metadata", JSON, default=dict)
     error_message = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, onupdate=datetime.utcnow, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime, onupdate=lambda: datetime.now(timezone.utc), nullable=True)
 
     # Relationships
     chunks = relationship("Chunk", back_populates="document", cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f"<Document id={self.id} filename='{self.filename}' status={self.status}>"
 
 
 class Chunk(Base):
@@ -79,10 +83,13 @@ class Chunk(Base):
     token_count = Column(Integer, nullable=True)
     metadata_ = Column("metadata", JSON, default=dict)
     embedding_id = Column(String(256), nullable=True)  # ID in vector store
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
     # Relationships
     document = relationship("Document", back_populates="chunks")
+
+    def __repr__(self):
+        return f"<Chunk id={self.id} doc={self.document_id} index={self.chunk_index}>"
 
 
 class Conversation(Base):
@@ -91,9 +98,10 @@ class Conversation(Base):
     __tablename__ = "conversations"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    owner_key = Column(String(512), nullable=True, index=True)
     title = Column(String(512), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, onupdate=datetime.utcnow, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime, onupdate=lambda: datetime.now(timezone.utc), nullable=True)
 
     messages = relationship(
         "Message", back_populates="conversation", cascade="all, delete-orphan"
@@ -116,9 +124,12 @@ class Message(Base):
     content = Column(Text, nullable=False)
     citations = Column(JSON, default=list)
     metadata_ = Column("metadata", JSON, default=dict)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
     conversation = relationship("Conversation", back_populates="messages")
+
+    def __repr__(self):
+        return f"<Message id={self.id} role='{self.role}' conv={self.conversation_id}>"
 
 
 class CitationRecord(Base):
@@ -139,4 +150,4 @@ class CitationRecord(Base):
     section = Column(String(512), nullable=True)
     content_snippet = Column(Text, nullable=True)
     relevance_score = Column(Float, default=0.0)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)

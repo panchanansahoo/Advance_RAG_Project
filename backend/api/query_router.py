@@ -11,11 +11,16 @@ Task 1.4: Passes full retrieved chunks (not truncated snippets) to verification.
 from __future__ import annotations
 
 import logging
+import time
 import uuid
+from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request, Response
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from backend.database.connection import get_db
 from backend.database.models import Document
@@ -24,13 +29,18 @@ from backend.generation.service import GenerationService
 from backend.schemas.queries import QueryRequest, QueryResponse
 from backend.routing.query_router import QueryRouter, RouteType
 from backend.agent.pandas_agent import PandasAgent
+from backend.api.auth import enforce_question_access, get_user_key
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1", tags=["Query"])
 
+# ── Rate Limiting ───────────────────────────────────────────
+limiter = Limiter(key_func=get_remote_address)
+
 
 @router.post("/query", response_model=QueryResponse)
-async def query(request: QueryRequest, db: AsyncSession = Depends(get_db)):
+@limiter.limit("10/minute")
+async def query(request_obj: QueryRequest, request: Request, response: Response, db: AsyncSession = Depends(get_db)):
     """
     Ask a question and get a grounded answer with citations.
     Phase 4: Routes query to RAG, Pandas Agent, Visual, or Agentic based on context and intent.
@@ -39,14 +49,17 @@ async def query(request: QueryRequest, db: AsyncSession = Depends(get_db)):
     §20: Conversation memory — loads and saves messages.
     """
     try:
+        await enforce_question_access(request, response)
+        owner_key = await get_user_key(request, response)
+        query_start = time.perf_counter()
         # 0. Load conversation history (if conversation_id provided)
         conversation_messages = []
         conv_repo = ConversationRepository(db)
 
-        if request.conversation_id:
+        if request_obj.conversation_id:
             try:
                 conversation_messages = await conv_repo.get_recent_messages(
-                    request.conversation_id, limit=10
+                    request_obj.conversation_id, limit=10, owner_key=owner_key
                 )
             except Exception as e:
                 logger.warning("Failed to load conversation history: %s", e)
@@ -54,9 +67,9 @@ async def query(request: QueryRequest, db: AsyncSession = Depends(get_db)):
             # Auto-create a conversation if none provided
             try:
                 conv = await conv_repo.create_conversation(
-                    title=request.query[:80]
+                    title=request_obj.query[:80], owner_key=owner_key
                 )
-                request = request.model_copy(
+                request_obj = request_obj.model_copy(
                     update={"conversation_id": conv.id}
                 )
             except Exception as e:
@@ -67,9 +80,12 @@ async def query(request: QueryRequest, db: AsyncSession = Depends(get_db)):
         file_paths = []
         image_file_paths = []
 
-        if request.document_ids:
+        if request_obj.document_ids:
             result = await db.execute(
-                select(Document).where(Document.id.in_(request.document_ids))
+                select(Document).where(
+                    Document.id.in_(request_obj.document_ids),
+                    Document.owner_key == owner_key,
+                )
             )
             docs = result.scalars().all()
             for doc in docs:
@@ -87,19 +103,19 @@ async def query(request: QueryRequest, db: AsyncSession = Depends(get_db)):
         route: Optional[RouteType] = None
 
         # Priority 1: Per-request explicit override
-        if request.force_route:
+        if request_obj.force_route:
             try:
-                route = RouteType(request.force_route.lower())
+                route = RouteType(request_obj.force_route.lower())
                 logger.info("Per-request forced route: %s", route)
             except ValueError:
                 logger.warning(
                     "Unknown forced route '%s', falling back to adaptive routing",
-                    request.force_route,
+                    request_obj.force_route,
                 )
-        elif request.use_agent is True:
+        elif request_obj.use_agent is True:
             route = RouteType.AGENTIC
             logger.info("Per-request forced agentic RAG via use_agent=True")
-        elif request.use_agent is False:
+        elif request_obj.use_agent is False:
             route = RouteType.RAG
             logger.info("Per-request forced standard RAG via use_agent=False")
 
@@ -112,7 +128,7 @@ async def query(request: QueryRequest, db: AsyncSession = Depends(get_db)):
         if route is None:
             from backend.routing.query_router import get_query_router
             router_svc = get_query_router()
-            route = await router_svc.route_query(request.query, available_extensions)
+            route = await router_svc.route_query(request_obj.query, available_extensions)
             # If router chose agentic, but agentic_rag_enabled is False, downgrade to RAG
             if route == RouteType.AGENTIC and not settings.agentic_rag_enabled:
                 logger.info(
@@ -125,29 +141,44 @@ async def query(request: QueryRequest, db: AsyncSession = Depends(get_db)):
 
         if route == RouteType.AGENTIC:
             response = await _handle_agentic(
-                request, file_paths, settings, db
+                request_obj, file_paths, settings, db, conversation_messages, owner_key
             )
 
         elif route == RouteType.STRUCTURED_DATA and file_paths:
-            response = await _handle_structured_data(request, file_paths)
+            response = await _handle_structured_data(request_obj, file_paths)
 
         elif route == RouteType.VISUAL and image_file_paths:
-            response = await _handle_visual(request, image_file_paths, conversation_messages)
+            response = await _handle_visual(request_obj, image_file_paths, conversation_messages)
 
         else:
             # Default: standard RAG pipeline
             response = await _handle_rag(
-                request, conversation_messages, settings
+                request_obj, conversation_messages, settings, owner_key
             )
 
-        # 4. Save conversation messages (§20)
-        if request.conversation_id:
+        # 4. Clean answer to ensure no programming/traceback errors are presented
+        from backend.utils.error_sanitizer import clean_response_answer, sanitize_error_message
+        response.answer = clean_response_answer(response.answer)
+
+        # 5. Record timing
+        query_elapsed = time.perf_counter() - query_start
+        response.retrieval_metadata["response_time_seconds"] = round(query_elapsed, 3)
+        logger.info(
+            "Query completed in %.2fs | route=%s | query='%s'",
+            query_elapsed,
+            response.retrieval_metadata.get("route", "unknown"),
+            request_obj.query[:80],
+        )
+
+        # 6. Save conversation messages (§20)
+        if request_obj.conversation_id:
             try:
                 # Save user message
                 await conv_repo.add_message(
-                    conversation_id=request.conversation_id,
+                    conversation_id=request_obj.conversation_id,
                     role="user",
-                    content=request.query,
+                    content=request_obj.query,
+                    owner_key=owner_key,
                 )
                 # Save assistant response
                 citation_data = [
@@ -159,11 +190,12 @@ async def query(request: QueryRequest, db: AsyncSession = Depends(get_db)):
                     for c in response.citations
                 ]
                 await conv_repo.add_message(
-                    conversation_id=request.conversation_id,
+                    conversation_id=request_obj.conversation_id,
                     role="assistant",
                     content=response.answer,
                     citations=citation_data,
                     metadata=response.retrieval_metadata,
+                    owner_key=owner_key,
                 )
             except Exception as e:
                 logger.warning("Failed to save conversation messages: %s", e)
@@ -172,11 +204,130 @@ async def query(request: QueryRequest, db: AsyncSession = Depends(get_db)):
 
     except Exception as e:
         logger.error("Query failed: %s", e, exc_info=True)
+        err_str = str(e).lower()
+        if type(e).__name__ == "ResourceExhausted" or any(kw in err_str for kw in ("429", "quota", "rate limit")):
+            raise HTTPException(
+                status_code=429,
+                detail="The AI assistant is experiencing high demand or has exceeded its quota. Please try again later.",
+            )
+        
+        from backend.utils.error_sanitizer import sanitize_error_message
+        friendly_detail = sanitize_error_message(
+            e,
+            default_fallback="We encountered an unexpected issue while researching your question. Please try asking again or rephrasing your prompt.",
+        )
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to process query: {str(e)}",
+            detail=friendly_detail,
         )
 
+@router.post("/query_stream")
+@limiter.limit("10/minute")
+async def query_stream(request_obj: QueryRequest, request: Request, response: Response, db: AsyncSession = Depends(get_db)):
+    """
+    Stream standard RAG answers, or execute the full routed pipeline when a
+    route is explicitly selected by the client.
+    """
+    try:
+        await enforce_question_access(request, response)
+        owner_key = await get_user_key(request, response)
+        conversation_messages = []
+        conv_repo = ConversationRepository(db)
+
+        if request_obj.conversation_id:
+            try:
+                conversation_messages = await conv_repo.get_recent_messages(
+                    request_obj.conversation_id, limit=10, owner_key=owner_key
+                )
+            except Exception as e:
+                logger.warning("Failed to load conversation history: %s", e)
+        else:
+            try:
+                conv = await conv_repo.create_conversation(
+                    title=request_obj.query[:80], owner_key=owner_key
+                )
+                request_obj = request_obj.model_copy(
+                    update={"conversation_id": conv.id}
+                )
+            except Exception as e:
+                logger.warning("Failed to auto-create conversation: %s", e)
+
+        from backend.generation.service import get_generation_service
+        service = get_generation_service()
+
+        async def stream_generator():
+            try:
+                import json
+
+                streamed_answer = []
+                streamed_citations = []
+                if request_obj.conversation_id:
+                    yield json.dumps({"conversation_id": str(request_obj.conversation_id)}) + "\n"
+
+                if request_obj.force_route or request_obj.use_agent is not None:
+                    routed_response = await query(request_obj, request, response, db)
+                    yield json.dumps({
+                        "citations": [citation.model_dump(mode="json") for citation in routed_response.citations],
+                        "chunk": routed_response.answer,
+                    }) + "\n"
+                    return
+
+                async for chunk in service.answer_stream(
+                    request_obj,
+                    conversation_messages=conversation_messages,
+                    owner_key=owner_key,
+                ):
+                    yield chunk
+                    try:
+                        event = json.loads(chunk)
+                        if event.get("chunk"):
+                            streamed_answer.append(event["chunk"])
+                        if event.get("citations"):
+                            streamed_citations = event["citations"]
+                    except (TypeError, json.JSONDecodeError):
+                        continue
+
+                if request_obj.conversation_id:
+                    await conv_repo.add_message(
+                        conversation_id=request_obj.conversation_id,
+                        role="user",
+                        content=request_obj.query,
+                        owner_key=owner_key,
+                    )
+                    await conv_repo.add_message(
+                        conversation_id=request_obj.conversation_id,
+                        role="assistant",
+                        content="".join(streamed_answer),
+                        citations=streamed_citations,
+                        owner_key=owner_key,
+                    )
+            except Exception as e:
+                err_str = str(e).lower()
+                if type(e).__name__ == "ResourceExhausted" or any(kw in err_str for kw in ("429", "quota", "rate limit")):
+                    yield json.dumps({"error": "The AI assistant is experiencing high demand or has exceeded its quota. Please try again later."}) + "\n"
+                    return
+                
+                from backend.utils.error_sanitizer import sanitize_error_message
+                friendly_detail = sanitize_error_message(e, default_fallback="We encountered an unexpected issue while researching your question.")
+                yield json.dumps({"error": friendly_detail}) + "\n"
+
+        stream_response = StreamingResponse(stream_generator(), media_type="application/x-ndjson")
+        for header in response.raw_headers:
+            if header[0].lower() == b"set-cookie":
+                stream_response.raw_headers.append(header)
+        return stream_response
+
+    except Exception as e:
+        logger.error("Query stream failed: %s", e, exc_info=True)
+        err_str = str(e).lower()
+        if type(e).__name__ == "ResourceExhausted" or any(kw in err_str for kw in ("429", "quota", "rate limit")):
+            raise HTTPException(
+                status_code=429,
+                detail="The AI assistant is experiencing high demand or has exceeded its quota. Please try again later.",
+            )
+        from backend.utils.error_sanitizer import sanitize_error_message
+        friendly_detail = sanitize_error_message(e, default_fallback="We encountered an unexpected issue.")
+        raise HTTPException(status_code=500, detail=friendly_detail)
 
 # ── Route Handlers ──────────────────────────────────────────
 
@@ -186,6 +337,8 @@ async def _handle_agentic(
     file_paths: list,
     settings,
     db: AsyncSession,
+    conversation_messages: list = None,
+    owner_key: str = None,
 ) -> QueryResponse:
     """Handle agentic RAG with decomposition and self-correction (Phase 6)."""
     logger.info("Executing via Agentic RAG Orchestrator")
@@ -196,6 +349,8 @@ async def _handle_agentic(
         query=request.query,
         document_ids=request.document_ids,
         structured_file_paths=file_paths,
+        conversation_messages=conversation_messages,
+        owner_key=owner_key,
     )
 
     # Deduplicate citations
@@ -331,6 +486,7 @@ async def _handle_rag(
     request: QueryRequest,
     conversation_messages: list,
     settings,
+    owner_key: str = None,
 ) -> QueryResponse:
     """Handle standard RAG pipeline (Phase 1-2)."""
     logger.info("Executing via standard RAG pipeline")
@@ -341,6 +497,7 @@ async def _handle_rag(
     response = await service.answer(
         request,
         conversation_messages=conversation_messages,
+        owner_key=owner_key,
     )
     response.retrieval_metadata["route"] = "rag"
 

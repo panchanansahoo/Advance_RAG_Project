@@ -17,6 +17,7 @@ class TestAgentOrchestrator:
     async def test_run_direct_final_answer(self, mock_settings, mock_get_llm):
         settings = mock_settings.return_value
         settings.agent_max_iterations = 5
+        settings.agent_token_budget = 50000
 
         mock_llm = AsyncMock()
         # Call 1: decompose_query -> no decomposition needed
@@ -42,6 +43,7 @@ class TestAgentOrchestrator:
     async def test_run_tool_then_answer(self, mock_settings, mock_hybrid_tool_class, mock_get_llm):
         settings = mock_settings.return_value
         settings.agent_max_iterations = 5
+        settings.agent_token_budget = 50000
 
         mock_hybrid_tool = AsyncMock()
         mock_hybrid_tool.execute.return_value = ("Found text.", [{"chunk_id": "1"}], [0.85])
@@ -78,6 +80,7 @@ class TestAgentOrchestrator:
     async def test_run_max_iterations(self, mock_settings, mock_get_llm):
         settings = mock_settings.return_value
         settings.agent_max_iterations = 2
+        settings.agent_token_budget = 50000
 
         mock_llm = AsyncMock()
         # Call 1: decompose_query -> no decomposition
@@ -108,6 +111,7 @@ class TestAgentOrchestrator:
         """Test that complex queries are decomposed into sub-questions."""
         settings = mock_settings.return_value
         settings.agent_max_iterations = 5
+        settings.agent_token_budget = 50000
 
         mock_llm = AsyncMock()
         mock_llm.generate.side_effect = [

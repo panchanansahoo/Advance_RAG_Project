@@ -8,128 +8,240 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
     <div id="app">
-        <!-- ── Header ──────────────────────────────────── -->
-        <header class="app-header">
-            <div class="header-left">
-                <div class="logo">
-                    <svg class="logo-icon" viewBox="0 0 32 32" fill="none">
-                        <circle cx="16" cy="16" r="14" stroke="url(#grad1)" stroke-width="2.5"/>
-                        <path d="M10 20l6-12 6 12" stroke="url(#grad1)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        <circle cx="16" cy="13" r="2" fill="url(#grad1)"/>
-                        <defs>
-                            <linearGradient id="grad1" x1="0" y1="0" x2="32" y2="32">
-                                <stop offset="0%" stop-color="#6366f1"/>
-                                <stop offset="100%" stop-color="#8b5cf6"/>
-                            </linearGradient>
-                        </defs>
+        <!-- ── Sidebar ──────────────────────────────── -->
+        <aside class="sidebar" id="sidebar">
+            <!-- New Chat + Sidebar Toggle -->
+            <div class="sidebar-top">
+                <button class="new-chat-btn" id="newChatBtn" title="New Chat">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 5v14M5 12h14" stroke-linecap="round"/>
                     </svg>
-                    <h1>Advanced RAG Assistant</h1>
+                    New Chat
+                </button>
+                <button class="sidebar-toggle-btn" id="sidebarCloseBtn" title="Close sidebar">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M11 19l-7-7 7-7" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M18 5v14" stroke-linecap="round"/>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Search -->
+            <div class="sidebar-search">
+                <div class="search-input-wrapper">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"/>
+                        <path d="M21 21l-4.35-4.35" stroke-linecap="round"/>
+                    </svg>
+                    <input type="text" id="convSearch" placeholder="Search conversations...">
                 </div>
             </div>
-            <div class="header-right">
-                <span class="status-badge" id="statusBadge">
-                    <span class="status-dot"></span>
-                    Ready
-                </span>
+
+            <!-- Conversation List -->
+            <div class="conversation-list" id="conversationList">
+                <!-- Populated by JS -->
             </div>
-        </header>
 
-        <!-- ── Main Content ────────────────────────────── -->
-        <main class="app-main">
-            <!-- ── Sidebar: Documents ──────────────────── -->
-            <aside class="sidebar" id="sidebar">
-                <div class="sidebar-header">
-                    <h2>Documents</h2>
-                    <span class="doc-count" id="docCount">0</span>
-                </div>
-
-                <div class="upload-zone" id="uploadZone">
-                    <input type="file" id="fileInput" accept=".pdf,.txt,.md,.csv,.xlsx,.docx,.png,.jpg,.jpeg" multiple hidden>
-                    <div class="upload-content">
-                        <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                            <path d="M12 16V4m0 0l-4 4m4-4l4 4" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M20 16v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2" stroke-linecap="round" stroke-linejoin="round"/>
+            <!-- Documents Section (Collapsible) -->
+            <div class="sidebar-documents" id="sidebarDocuments">
+                <div class="docs-header" id="docsToggle">
+                    <div class="docs-header-left">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" stroke-linecap="round" stroke-linejoin="round"/>
+                            <polyline points="14 2 14 8 20 8" stroke-linecap="round" stroke-linejoin="round"/>
                         </svg>
-                        <p>Drop files here or <span class="upload-link">browse</span></p>
-                        <span class="upload-hint">PDF, TXT, MD, CSV, XLSX, DOCX, Images</span>
+                        Documents
+                        <span class="doc-count-badge" id="docCount">0</span>
                     </div>
+                    <svg class="chevron-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="6 9 12 15 18 9" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </div>
+
+                <div class="upload-zone-compact" id="uploadZone">
+                    <input type="file" id="fileInput" accept=".pdf,.txt,.md,.csv,.xlsx,.docx,.png,.jpg,.jpeg" multiple hidden>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M12 16V4m0 0l-4 4m4-4l4 4" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M20 16v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                    Drop files or click to upload
                 </div>
 
                 <div class="document-list" id="documentList">
                     <!-- Documents populated by JS -->
                 </div>
-            </aside>
+            </div>
 
-            <!-- ── Chat Area ───────────────────────────── -->
-            <section class="chat-area">
-                <div class="chat-messages" id="chatMessages">
+            <!-- User Panel -->
+            <div class="sidebar-user" id="userPanel" tabindex="0" role="button" aria-expanded="false" aria-label="Open account menu">
+                <div class="user-avatar" id="userAvatar">PS</div>
+                <span class="user-name" id="userName">Panchanan Sahoo</span>
+                <span class="user-chevron">⌄</span>
+                <div class="user-auth-actions">
+                    <button type="button" data-auth-provider="google">Google</button>
+                    <button type="button" data-auth-provider="github">GitHub</button>
+                </div>
+                <div class="user-menu" id="userMenu" aria-hidden="true">
+                    <div class="user-menu-heading">Account</div>
+                    <div class="user-menu-email" id="userMenuEmail">Not signed in</div>
+                    <div class="user-menu-provider" id="userMenuProvider">Two free questions available</div>
+                    <button type="button" class="user-menu-login" id="userMenuLogin">Sign in</button>
+                    <button type="button" class="user-menu-logout" id="userMenuLogout">Log out</button>
+                </div>
+            </div>
+        </aside>
+
+        <!-- ── Mobile Overlay ───────────────────────── -->
+        <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+        <div class="auth-modal" id="authModal" role="dialog" aria-modal="true" aria-labelledby="authModalTitle" aria-hidden="true">
+            <div class="auth-modal-card">
+                <button class="auth-modal-close" id="authModalClose" type="button" aria-label="Close login">×</button>
+                <div class="auth-modal-mark">✦</div>
+                <p class="auth-modal-kicker">Keep researching</p>
+                <h2 id="authModalTitle">Sign in to continue</h2>
+                <p class="auth-modal-copy">You have used your two free questions. Sign in to keep exploring your knowledge base.</p>
+                <div class="oauth-buttons">
+                    <button class="oauth-button oauth-google" type="button" data-auth-provider="google"><span class="oauth-icon">G</span><span>Continue with Google</span></button>
+                    <button class="oauth-button oauth-github" type="button" data-auth-provider="github"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.18-3.37-1.18-.46-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.61.07-.61 1 .07 1.53 1.03 1.53 1.03.9 1.53 2.36 1.09 2.94.83.09-.65.35-1.09.64-1.34-2.22-.25-4.56-1.11-4.56-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02A9.6 9.6 0 0 1 12 7.01c.85 0 1.71.12 2.51.37 1.91-1.29 2.75-1.02 2.75-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.75c0 .27.18.58.69.48A10 10 0 0 0 12 2Z"/></svg><span>Continue with GitHub</span></button>
+                </div>
+                <p class="auth-modal-footnote">Your account keeps your conversations available across sessions.</p>
+            </div>
+        </div>
+
+        <!-- ── Chat Area ────────────────────────────── -->
+        <section class="chat-area">
+            <!-- Top Bar -->
+            <div class="chat-topbar">
+                <button class="topbar-toggle" id="sidebarOpenBtn" title="Open sidebar">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M13 5l7 7-7 7" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M6 5v14" stroke-linecap="round"/>
+                    </svg>
+                </button>
+                <button class="evaluation-btn" id="evaluationBtn" type="button" title="Open evaluation dashboard">
+                    <span>Evaluation</span>
+                </button>
+                <div class="model-selector" id="modelSelector">
+                    <button class="model-selector-btn" id="modelSelectorBtn" type="button">
+                        <span id="modelLabel">RAG Assistant</span>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="6 9 12 15 18 9" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </button>
+                    <div class="model-dropdown" id="modelDropdown">
+                        <button class="model-option active" data-route="" data-label="RAG Assistant">
+                            <span>🤖</span> Auto (Smart Routing)
+                            <svg class="model-option-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+                        </button>
+                        <button class="model-option" data-route="rag" data-label="Standard RAG">
+                            <span>📄</span> Standard RAG
+                            <svg class="model-option-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+                        </button>
+                        <button class="model-option" data-route="agentic" data-label="Agentic RAG">
+                            <span>🧠</span> Agentic RAG
+                            <svg class="model-option-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+                        </button>
+                        <button class="model-option" data-route="structured_data" data-label="Data Analyst">
+                            <span>📊</span> Data Analyst
+                            <svg class="model-option-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+                        </button>
+                        <button class="model-option" data-route="visual" data-label="Vision">
+                            <span>🖼️</span> Vision (Image Analysis)
+                            <svg class="model-option-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <section class="evaluation-panel" id="evaluationPanel" aria-hidden="true">
+                <div class="evaluation-panel-header">
+                    <div><span class="evaluation-kicker">Pipeline quality</span><h2>Evaluation dashboard</h2></div>
+                    <button class="evaluation-close" id="evaluationCloseBtn" type="button" title="Close evaluation dashboard">×</button>
+                </div>
+                <div class="evaluation-actions">
+                    <button class="evaluation-run-btn" id="runEvaluationBtn" type="button">Run benchmark</button>
+                    <button class="evaluation-experiment-btn" id="runExperimentsBtn" type="button">Compare architectures</button>
+                </div>
+                <div class="evaluation-status" id="evaluationStatus">Loading latest results...</div>
+                <div class="evaluation-metrics" id="evaluationMetrics"></div>
+                <div class="evaluation-experiments" id="evaluationExperiments"></div>
+            </section>
+
+            <!-- Messages -->
+            <div class="chat-messages" id="chatMessages">
+                <div class="chat-messages-inner" id="chatMessagesInner">
                     <!-- Welcome message -->
                     <div class="welcome-message" id="welcomeMessage">
-                        <div class="welcome-icon">
-                            <svg viewBox="0 0 48 48" fill="none">
-                                <circle cx="24" cy="24" r="20" fill="url(#wg1)" opacity="0.15"/>
-                                <circle cx="24" cy="24" r="12" stroke="url(#wg1)" stroke-width="2"/>
-                                <path d="M20 28l4-8 4 8" stroke="url(#wg1)" stroke-width="1.5" stroke-linecap="round"/>
-                                <circle cx="24" cy="22" r="1.5" fill="url(#wg1)"/>
-                                <defs>
-                                    <linearGradient id="wg1" x1="4" y1="4" x2="44" y2="44">
-                                        <stop offset="0%" stop-color="#6366f1"/>
-                                        <stop offset="100%" stop-color="#8b5cf6"/>
-                                    </linearGradient>
-                                </defs>
+                        <div class="welcome-logo">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M9 19l-5-5 5-5" stroke-linecap="round" stroke-linejoin="round"/>
+                                <path d="M15 5l5 5-5 5" stroke-linecap="round" stroke-linejoin="round"/>
+                                <path d="M13 3l-2 18" stroke-linecap="round"/>
                             </svg>
                         </div>
-                        <h2>Welcome to Advanced RAG Assistant</h2>
-                        <p>Upload documents and ask questions. Get evidence-grounded answers with citations.</p>
+                        <h2>Advanced RAG Assistant</h2>
+                        <p>Upload documents and ask questions. Get evidence-grounded answers with citations from your knowledge base.</p>
                         <div class="feature-cards">
-                            <div class="feature-card">
+                            <div class="feature-card" data-prompt="Summarize the uploaded documents">
                                 <span class="feature-emoji">📄</span>
                                 <span>Multi-format documents</span>
                             </div>
-                            <div class="feature-card">
+                            <div class="feature-card" data-prompt="What are the key topics in the documents?">
                                 <span class="feature-emoji">🔍</span>
                                 <span>Intelligent retrieval</span>
                             </div>
-                            <div class="feature-card">
+                            <div class="feature-card" data-prompt="Find supporting evidence for the main arguments">
                                 <span class="feature-emoji">📌</span>
                                 <span>Source citations</span>
                             </div>
-                            <div class="feature-card">
+                            <div class="feature-card" data-prompt="Analyze the data trends in my spreadsheets">
                                 <span class="feature-emoji">🤖</span>
                                 <span>AI-powered answers</span>
                             </div>
                         </div>
                     </div>
                 </div>
+            </div>
 
-                <!-- ── Chat Input ──────────────────────── -->
-                <div class="chat-input-container">
+            <!-- Chat Input -->
+            <div class="chat-input-container">
+                <div class="chat-input-inner">
                     <form class="chat-input-form" id="chatForm">
+                        <div class="pending-files" id="pendingFiles">
+                            <!-- Pending file chips rendered here -->
+                        </div>
                         <div class="input-wrapper">
+                            <button type="button" class="attach-btn" id="attachBtn" title="Attach files">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M12 5v14M5 12h14" stroke-linecap="round"/>
+                                </svg>
+                            </button>
                             <textarea
                                 id="queryInput"
-                                placeholder="Ask a question about your documents..."
+                                placeholder="Ask about your documents..."
                                 rows="1"
                                 maxlength="2000"
                             ></textarea>
                             <button type="submit" class="send-button" id="sendButton" disabled>
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <path d="M22 2L11 13" stroke-linecap="round" stroke-linejoin="round"/>
-                                    <path d="M22 2L15 22l-4-9-9-4 20-7z" stroke-linecap="round" stroke-linejoin="round"/>
+                                <svg viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M7 11l5-5 5 5M12 6v13" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
                                 </svg>
                             </button>
                         </div>
                         <div class="input-footer">
-                            <span class="char-count" id="charCount">0 / 2000</span>
+                            <span>RAG Assistant can make mistakes. Verify important information.</span>
                         </div>
                     </form>
                 </div>
-            </section>
-        </main>
+            </div>
+        </section>
     </div>
 
     <script src="app.js"></script>

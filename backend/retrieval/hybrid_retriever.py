@@ -10,6 +10,7 @@ where k is a constant (default 60) and rank_i is the rank in source i.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, Dict, List, Optional
 from uuid import UUID
@@ -70,6 +71,7 @@ class HybridRetriever:
         query: str,
         top_k: int = 5,
         document_ids: Optional[List[UUID]] = None,
+        owner_key: Optional[str] = None,
     ) -> List[HybridSearchResult]:
         """
         Perform hybrid retrieval with RRF fusion.
@@ -91,36 +93,46 @@ class HybridRetriever:
         strategy = self.settings.retrieval_strategy.lower()
         doc_id_strs = [str(d) for d in document_ids] if document_ids else None
 
-        # ── Vector Search ───────────────────────────────────
         vector_results: List[VectorSearchResult] = []
-        if strategy in ("vector", "hybrid"):
-            query_embedding = await self.embedding_provider.embed_query(query)
-            filters = None
-            if doc_id_strs:
-                filters = {"document_id": doc_id_strs}
-
-            # Fetch more candidates for fusion
-            vector_top_k = max(top_k * 3, self.settings.bm25_top_k)
-            vector_results = await self.vector_store.search(
-                query_embedding=query_embedding,
-                top_k=vector_top_k,
-                filters=filters,
-            )
-            logger.info("Vector search returned %d results", len(vector_results))
-
-        # ── BM25 Search ─────────────────────────────────────
         bm25_results: List[BM25SearchResult] = []
-        if strategy in ("bm25", "hybrid") and self.settings.bm25_enabled:
-            bm25_index = get_bm25_index()
-            if bm25_index.is_built:
-                bm25_results = bm25_index.search(
-                    query=query,
-                    top_k=self.settings.bm25_top_k,
-                    document_ids=doc_id_strs,
+
+        async def _run_vector():
+            nonlocal vector_results
+            if strategy in ("vector", "hybrid"):
+                query_embedding = await self.embedding_provider.embed_query(query)
+                filters = None
+                if doc_id_strs:
+                    filters = {"document_id": doc_id_strs}
+                if owner_key is not None:
+                    filters = filters or {}
+                    filters["owner_key"] = owner_key
+                vector_top_k = max(top_k * 3, self.settings.bm25_top_k)
+                vector_results = await self.vector_store.search(
+                    query_embedding=query_embedding,
+                    top_k=vector_top_k,
+                    filters=filters,
                 )
-                logger.info("BM25 search returned %d results", len(bm25_results))
-            else:
-                logger.debug("BM25 index not built, skipping keyword search")
+                logger.info("Vector search returned %d results", len(vector_results))
+
+        async def _run_bm25():
+            nonlocal bm25_results
+            if strategy in ("bm25", "hybrid") and self.settings.bm25_enabled:
+                bm25_index = get_bm25_index()
+                if bm25_index.is_built:
+                    # BM25 search is CPU-bound, run in thread
+                    bm25_results = await asyncio.to_thread(
+                        bm25_index.search,
+                        query=query,
+                        top_k=self.settings.bm25_top_k,
+                        document_ids=doc_id_strs,
+                        owner_key=owner_key,
+                    )
+                    logger.info("BM25 search returned %d results", len(bm25_results))
+                else:
+                    logger.debug("BM25 index not built, skipping keyword search")
+
+        # Run both searches concurrently
+        await asyncio.gather(_run_vector(), _run_bm25())
 
         # ── Fusion ──────────────────────────────────────────
         if strategy == "vector" or not bm25_results:

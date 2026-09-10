@@ -4,10 +4,14 @@ Agent Tools — Wrappers around retrieval and execution services.
 Phase 6 component.
 Returns structured observations with relevance scores for the agent's
 self-correction loop (PRD §15).
+
+Each tool execution is wrapped with a timeout to prevent a single
+tool from blocking the entire orchestrator.
 """
 
+import asyncio
 import logging
-from typing import List, Dict, Any, Tuple
+from typing import Dict, Any, List, Optional, Tuple
 from uuid import UUID
 
 from backend.retrieval.service import RetrievalService
@@ -15,6 +19,9 @@ from backend.retrieval.graph_retriever import GraphRetriever
 from backend.agent.pandas_agent import PandasAgent
 
 logger = logging.getLogger(__name__)
+
+# Per-tool execution timeout (seconds)
+_TOOL_TIMEOUT = 30
 
 
 class HybridSearchTool:
@@ -24,7 +31,7 @@ class HybridSearchTool:
         self.retrieval_service = retrieval_service or RetrievalService()
 
     async def execute(
-        self, query: str, document_ids: List[UUID] = None
+        self, query: str, document_ids: List[UUID] = None, owner_key: Optional[str] = None
     ) -> Tuple[str, List[Dict[str, Any]], List[float]]:
         """
         Runs hybrid search and returns a text summary, citation list,
@@ -34,10 +41,14 @@ class HybridSearchTool:
             Tuple of (observation_text, citations, relevance_scores)
         """
         try:
-            chunks = await self.retrieval_service.retrieve_chunks(
-                query=query,
-                top_k=5,
-                document_ids=document_ids,
+            chunks = await asyncio.wait_for(
+                self.retrieval_service.retrieve_chunks(
+                    query=query,
+                    top_k=5,
+                    document_ids=document_ids,
+                    owner_key=owner_key,
+                ),
+                timeout=_TOOL_TIMEOUT,
             )
 
             if not chunks:
@@ -69,9 +80,12 @@ class HybridSearchTool:
 
             return observation, citations, relevance_scores
 
+        except asyncio.TimeoutError:
+            logger.error("HybridSearchTool timed out after %ds", _TOOL_TIMEOUT)
+            return f"Search timed out after {_TOOL_TIMEOUT} seconds. Try a simpler query.", [], []
         except Exception as e:
             logger.error("HybridSearchTool failed: %s", e)
-            return f"Error executing hybrid search: {str(e)}", [], []
+            return f"Search encountered an issue. Please try rephrasing your query.", [], []
 
 
 class GraphSearchTool:
@@ -88,7 +102,10 @@ class GraphSearchTool:
             Tuple of (observation_text, relevance_scores)
         """
         try:
-            results = await self.graph_retriever.search(query=query, top_k=5)
+            results = await asyncio.wait_for(
+                self.graph_retriever.search(query=query, top_k=5),
+                timeout=_TOOL_TIMEOUT,
+            )
             if not results:
                 return "No relevant graph connections found.", []
 
@@ -101,9 +118,13 @@ class GraphSearchTool:
                     f"[Relevance: {score:.3f}] {r['content']}"
                 )
             return "\n".join(observation_parts), scores
+
+        except asyncio.TimeoutError:
+            logger.error("GraphSearchTool timed out after %ds", _TOOL_TIMEOUT)
+            return f"Graph search timed out after {_TOOL_TIMEOUT} seconds.", []
         except Exception as e:
             logger.error("GraphSearchTool failed: %s", e)
-            return f"Error executing graph search: {str(e)}", []
+            return f"Graph search encountered an issue. The knowledge graph may not be available.", []
 
 
 class PandasQATool:
@@ -118,9 +139,14 @@ class PandasQATool:
             return "No structured data files (.csv, .xlsx) available for analysis."
 
         try:
-            result = await self.pandas_agent.run(query=query, file_paths=file_paths)
+            result = await asyncio.wait_for(
+                self.pandas_agent.run(query=query, file_paths=file_paths),
+                timeout=_TOOL_TIMEOUT,
+            )
             return result
+        except asyncio.TimeoutError:
+            logger.error("PandasQATool timed out after %ds", _TOOL_TIMEOUT)
+            return f"Data analysis timed out after {_TOOL_TIMEOUT} seconds. Try a simpler query."
         except Exception as e:
             logger.error("PandasQATool failed: %s", e)
-            return f"Error executing pandas agent: {str(e)}"
-
+            return f"Data analysis encountered an issue. Please try rephrasing your question."
