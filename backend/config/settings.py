@@ -56,6 +56,16 @@ class Settings(BaseSettings):
             return json.loads(v)
         return v
 
+    @field_validator("supabase_url", mode="before")
+    @classmethod
+    def clean_supabase_url(cls, v):
+        if isinstance(v, str) and v.strip():
+            url = v.strip().rstrip("/")
+            if url.endswith("/rest/v1"):
+                url = url[:-8].rstrip("/")
+            return url
+        return v
+
     # ── Database / PostgreSQL / Supabase ────────────────────
     database_provider: str = "postgres"  # "postgres" or "sqlite"
     database_url_override: Optional[str] = Field(

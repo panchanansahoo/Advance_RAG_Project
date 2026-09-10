@@ -4,7 +4,26 @@
  * citations, model selector, stop/regenerate, keyboard shortcuts.
  */
 
-const API_BASE = (typeof window !== "undefined" && window.__API_BASE__) ? window.__API_BASE__ : ""; // Uses relative routing by default, proxy handled by Vercel
+const API_BASE = (typeof window !== "undefined" && window.__API_BASE__)
+    ? window.__API_BASE__
+    : (typeof window !== "undefined" && (window.location.port === "5500" || window.location.port === "3000" || window.location.port === "5173" || window.location.protocol === "file:"))
+        ? "http://localhost:8000"
+        : "";
+
+async function getAuthHeaders(extra = {}) {
+    const headers = { ...extra };
+    if (state.supabase) {
+        try {
+            const { data } = await state.supabase.auth.getSession();
+            if (data?.session?.access_token) {
+                headers['Authorization'] = `Bearer ${data.session.access_token}`;
+            }
+        } catch (e) {
+            console.warn('Unable to get Supabase session for auth headers', e);
+        }
+    }
+    return headers;
+}
 
 // ── State ──────────────────────────────────────────────────
 const state = {
@@ -71,25 +90,45 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 async function initSupabase() {
+    if (state.supabase) return state.supabase;
     try {
         const response = await fetch(`${API_BASE}/api/v1/auth/config`);
+        if (!response.ok) {
+            console.warn(`Supabase config returned HTTP ${response.status}`);
+            return null;
+        }
         const config = await response.json();
-        if (config.supabase_url && config.supabase_anon_key && window.supabase) {
-            state.supabase = window.supabase.createClient(config.supabase_url, config.supabase_anon_key);
+        const rawUrl = config.supabase_url ? String(config.supabase_url).trim() : '';
+        // Strip trailing /rest/v1 or trailing slashes if present
+        const cleanUrl = rawUrl.replace(/\/rest\/v1\/?$/, '').replace(/\/+$/, '');
+        if (cleanUrl && config.supabase_anon_key && window.supabase) {
+            state.supabase = window.supabase.createClient(cleanUrl, config.supabase_anon_key);
             state.supabase.auth.onAuthStateChange(() => loadAuthState());
+            return state.supabase;
         }
     } catch (error) {
         console.warn('Supabase Auth is unavailable', error);
     }
+    return null;
 }
 
 function initAuthButtons() {
     document.querySelectorAll('[data-auth-provider]').forEach((button) => {
-        button.addEventListener('click', () => {
+        button.addEventListener('click', async () => {
+            const provider = button.dataset.authProvider;
+            if (!state.supabase) {
+                await initSupabase();
+            }
             if (state.supabase) {
-                state.supabase.auth.signInWithOAuth({ provider: button.dataset.authProvider, options: { redirectTo: window.location.origin } });
+                const { error } = await state.supabase.auth.signInWithOAuth({
+                    provider: provider,
+                    options: { redirectTo: window.location.origin }
+                });
+                if (error) {
+                    showToast(`Login failed: ${error.message}`, 'error');
+                }
             } else {
-                showToast('Supabase login is not configured', 'error');
+                showToast('Supabase login is not configured. Please ensure backend is running with SUPABASE_URL and SUPABASE_ANON_KEY.', 'error');
             }
         });
     });
@@ -111,11 +150,7 @@ function initAuthButtons() {
 
 async function loadAuthState() {
     try {
-        const headers = {};
-        if (state.supabase) {
-            const { data } = await state.supabase.auth.getSession();
-            if (data.session?.access_token) headers.Authorization = `Bearer ${data.session.access_token}`;
-        }
+        const headers = await getAuthHeaders();
         const response = await fetch(`${API_BASE}/api/v1/auth/me`, { credentials: 'include', headers });
         const session = await response.json();
         const loggedIn = Boolean(session.authenticated);
@@ -124,22 +159,58 @@ async function loadAuthState() {
         document.getElementById('userName').textContent = displayName;
         document.getElementById('userAvatar').textContent = avatarText;
         document.getElementById('userMenuEmail').textContent = loggedIn ? session.email : 'Not signed in';
-        document.getElementById('userMenuProvider').textContent = loggedIn ? `Signed in with ${session.provider || 'account'}` : 'Two free questions available';
-        document.getElementById('userMenuLogin').hidden = loggedIn;
-        document.getElementById('userMenuLogout').hidden = !loggedIn;
-        document.querySelector('.user-auth-actions').hidden = loggedIn;
+        const providerEl = document.getElementById('userMenuProvider');
+        if (providerEl) {
+            providerEl.textContent = loggedIn ? '' : 'Two free questions available';
+            providerEl.hidden = loggedIn;
+            providerEl.style.display = loggedIn ? 'none' : '';
+        }
+        const loginBtn = document.getElementById('userMenuLogin');
+        if (loginBtn) {
+            loginBtn.hidden = loggedIn;
+            loginBtn.style.display = loggedIn ? 'none' : '';
+        }
+        const logoutBtn = document.getElementById('userMenuLogout');
+        if (logoutBtn) {
+            logoutBtn.hidden = !loggedIn;
+            logoutBtn.style.display = loggedIn ? '' : 'none';
+        }
+        const authActions = document.querySelector('.user-auth-actions');
+        if (authActions) {
+            authActions.hidden = loggedIn;
+            authActions.style.display = loggedIn ? 'none' : 'flex';
+            authActions.classList.toggle('hidden', loggedIn);
+        }
+        if (loggedIn) {
+            closeAuthModal();
+        }
     } catch (error) {
         console.warn('Unable to load account state', error);
         document.getElementById('userName').textContent = 'Guest account';
         document.getElementById('userAvatar').textContent = 'G';
         document.getElementById('userMenuEmail').textContent = 'Not signed in';
-        document.getElementById('userMenuProvider').textContent = 'Two free questions available';
+        const providerEl = document.getElementById('userMenuProvider');
+        if (providerEl) {
+            providerEl.textContent = 'Two free questions available';
+            providerEl.hidden = false;
+            providerEl.style.display = '';
+        }
         const loginBtn = document.getElementById('userMenuLogin');
-        if (loginBtn) loginBtn.hidden = false;
+        if (loginBtn) {
+            loginBtn.hidden = false;
+            loginBtn.style.display = '';
+        }
         const logoutBtn = document.getElementById('userMenuLogout');
-        if (logoutBtn) logoutBtn.hidden = true;
+        if (logoutBtn) {
+            logoutBtn.hidden = true;
+            logoutBtn.style.display = 'none';
+        }
         const authActions = document.querySelector('.user-auth-actions');
-        if (authActions) authActions.hidden = false;
+        if (authActions) {
+            authActions.hidden = false;
+            authActions.style.display = 'flex';
+            authActions.classList.remove('hidden');
+        }
     }
 }
 
@@ -1090,14 +1161,11 @@ async function sendQuery(query) {
             requestBody.force_route = state.forceRoute;
         }
 
-        const headers = { 'Content-Type': 'application/json' };
-        if (state.supabase) {
-            const { data } = await state.supabase.auth.getSession();
-            if (data.session?.access_token) headers.Authorization = `Bearer ${data.session.access_token}`;
-        }
+        const headers = await getAuthHeaders({ 'Content-Type': 'application/json' });
         let response = await fetch(`${API_BASE}/api/v1/query_stream`, {
             method: 'POST',
             headers,
+            credentials: 'include',
             body: JSON.stringify(requestBody),
             signal: state.abortController.signal,
         });
@@ -1105,9 +1173,11 @@ async function sendQuery(query) {
         if (response.status === 401) {
             const loggedIn = await loginForMoreQuestions();
             if (!loggedIn) return;
+            const retryHeaders = await getAuthHeaders({ 'Content-Type': 'application/json' });
             response = await fetch(`${API_BASE}/api/v1/query_stream`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: retryHeaders,
+                credentials: 'include',
                 body: JSON.stringify(requestBody),
                 signal: state.abortController.signal,
             });

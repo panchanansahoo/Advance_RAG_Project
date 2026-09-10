@@ -48,6 +48,8 @@ In your Render Service Dashboard, go to **Environment** and add:
 - `DATABASE_PROVIDER`: `sqlite`
 - `VECTOR_DB_PROVIDER`: `qdrant`
 - `CORS_ORIGINS`: `["*"]`
+- `SUPABASE_URL`: *(e.g., `https://<project-ref>.supabase.co`)*
+- `SUPABASE_ANON_KEY`: *(your Supabase anon/public key)*
 
 > [!NOTE]
 > Render provides the `PORT` variable dynamically. The `Dockerfile` is pre-configured to bind automatically to `${PORT:-8000}`.
