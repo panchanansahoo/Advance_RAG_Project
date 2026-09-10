@@ -91,23 +91,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function initSupabase() {
     if (state.supabase) return state.supabase;
+    let config = null;
     try {
         const response = await fetch(`${API_BASE}/api/v1/auth/config`);
-        if (!response.ok) {
+        if (response.ok) {
+            config = await response.json();
+        } else {
             console.warn(`Supabase config returned HTTP ${response.status}`);
-            return null;
-        }
-        const config = await response.json();
-        const rawUrl = config.supabase_url ? String(config.supabase_url).trim() : '';
-        // Strip trailing /rest/v1 or trailing slashes if present
-        const cleanUrl = rawUrl.replace(/\/rest\/v1\/?$/, '').replace(/\/+$/, '');
-        if (cleanUrl && config.supabase_anon_key && window.supabase) {
-            state.supabase = window.supabase.createClient(cleanUrl, config.supabase_anon_key);
-            state.supabase.auth.onAuthStateChange(() => loadAuthState());
-            return state.supabase;
         }
     } catch (error) {
-        console.warn('Supabase Auth is unavailable', error);
+        console.warn('Supabase Auth config fetch failed, using fallback:', error);
+    }
+
+    const fallbackUrl = 'https://rzohmftvdgdtafjzhydk.supabase.co';
+    const fallbackKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ6b2htZnR2ZGdkdGFmanpoeWRrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg3MDUzMTYsImV4cCI6MjEwNDI4MTMxNn0.dJdH3h5t1Y2QOsHpkToRQPy9zhgaN2jhd2rMSjBg1RY';
+
+    const rawUrl = (config && config.supabase_url) ? String(config.supabase_url).trim() : fallbackUrl;
+    const anonKey = (config && config.supabase_anon_key) ? String(config.supabase_anon_key).trim() : fallbackKey;
+    const cleanUrl = rawUrl.replace(/\/rest\/v1\/?$/, '').replace(/\/+$/, '');
+
+    if (cleanUrl && anonKey && window.supabase) {
+        try {
+            state.supabase = window.supabase.createClient(cleanUrl, anonKey);
+            state.supabase.auth.onAuthStateChange(() => loadAuthState());
+            return state.supabase;
+        } catch (err) {
+            console.error('Failed to create Supabase client:', err);
+        }
     }
     return null;
 }

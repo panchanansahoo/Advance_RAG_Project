@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: advanced-rag-backend
+    name: advance-rag-project
     env: docker
     dockerfilePath: ./Dockerfile
     region: oregon # Supported: oregon, ohio, frankfurt, singapore

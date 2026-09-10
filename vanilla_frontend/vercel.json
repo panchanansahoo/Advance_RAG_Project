@@ -4,7 +4,7 @@
   "rewrites": [
     {
       "source": "/api/:match*",
-      "destination": "https://advanced-rag-backend.onrender.com/api/:match*"
+      "destination": "https://advance-rag-project.onrender.com/api/:match*"
     }
   ]
 }

@@ -32,7 +32,7 @@ graph LR
 2. Click **New +** and select **Blueprint** (or **Web Service**):
    - **Blueprint (Recommended)**: Connect your repository `Advance_RAG_Project`. Render will detect `render.yaml` and configure the service automatically.
    - **Manual Web Service**:
-     - Name: `advanced-rag-backend` (or your preferred name)
+     - Name: `advance-rag-project` (or your preferred name)
      - Environment: `Docker`
      - Dockerfile Path: `./Dockerfile`
      - Region: Choose closest to your users (e.g., Oregon or Frankfurt)
@@ -42,6 +42,8 @@ graph LR
 ### Step 2.2: Add Environment Variables in Render
 In your Render Service Dashboard, go to **Environment** and add:
 - `APP_ENV`: `production`
+- `PORT`: `10000`
+- `CORS_ORIGINS`: `["*"]`
 - `LLM_PROVIDER`: `gemini` (or `openai` / `groq`)
 - `EMBEDDING_PROVIDER`: `gemini` (or `openai`) — **Crucial for Free Tier**: API embeddings use ~0 MB RAM!
 - `EMBEDDING_MODEL`: `models/text-embedding-004` (for Gemini) or `text-embedding-3-small` (for OpenAI)
@@ -50,24 +52,22 @@ In your Render Service Dashboard, go to **Environment** and add:
 - `GROQ_API_KEY`: *(optional, if using Groq)*
 - `DATABASE_PROVIDER`: `sqlite`
 - `VECTOR_DB_PROVIDER`: `chroma` (or `qdrant`)
-- `CORS_ORIGINS`: `["*"]`
 - `SUPABASE_URL`: *(e.g., `https://<project-ref>.supabase.co`)*
 - `SUPABASE_ANON_KEY`: *(your Supabase anon/public key)*
 
-> [!WARNING]
-> **Render Free Tier (512MB RAM) vs Local Embeddings**:
-> `sentence_transformer` (local PyTorch + `all-mpnet-base-v2` or `all-MiniLM-L6-v2`) requires 600MB+ of RAM and **will cause `Out of memory (used over 512Mi)` crash on Render Free tier**.
-> If using Render Free tier, always set `EMBEDDING_PROVIDER=gemini` or `openai`. If you want to use local `sentence_transformer`, upgrade the Render service plan to **Starter** (1GB RAM).
-
-> [!NOTE]
-> Render provides the `PORT` variable dynamically. The `Dockerfile` is pre-configured to bind automatically to `${PORT:-8000}`.
+### Step 2.2: Verify Health Check
+Once deployed, verify the service is running:
+```bash
+curl https://advance-rag-project.onrender.com/api/v1/health
+```
+Expected response: `{"status":"healthy", ...}`
 
 ### Step 2.3: Generate Render Deploy Hook
 1. In your Render Web Service dashboard, navigate to **Settings**.
 2. Scroll down to the **Deploy Hook** section.
 3. Click **Add Deploy Hook** (or copy existing).
 4. Copy the URL (format: `https://api.render.com/deploy/srv-xxxxxxxxxxxx?key=yyyyyyyy`).
-5. Note your backend URL (e.g., `https://advanced-rag-backend.onrender.com`).
+5. Note your backend URL (e.g., `https://advance-rag-project.onrender.com`).
 
 ---
 
