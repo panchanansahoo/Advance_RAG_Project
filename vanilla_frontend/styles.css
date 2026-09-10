@@ -123,6 +123,63 @@ body {
     min-width: 0;
 }
 
+/* ── Sidebar Brand Header ──────────────────────────────────── */
+.sidebar-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 14px 8px;
+    border-bottom: 1px solid var(--border-subtle);
+    margin-bottom: 4px;
+}
+
+.sidebar-brand-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-md);
+    background: linear-gradient(135deg, rgba(16, 163, 127, 0.15), rgba(56, 189, 248, 0.08));
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.sidebar-brand-icon img {
+    display: block;
+    width: 22px;
+    height: 22px;
+    filter: drop-shadow(0 2px 4px rgba(16, 163, 127, 0.3));
+}
+
+.sidebar-brand-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.sidebar-brand-name {
+    font-size: 0.92rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+}
+
+.sidebar-brand-badge {
+    font-size: 0.65rem;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: var(--radius-sm);
+    background: rgba(16, 163, 127, 0.15);
+    color: var(--accent-primary);
+    border: 1px solid rgba(16, 163, 127, 0.3);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
 /* Sidebar Top: New Chat + Toggle */
 .sidebar-top {
     padding: 10px 10px 4px;
@@ -606,7 +663,15 @@ body {
 }
 .auth-modal.visible .auth-modal-card { transform: translateY(0); }
 .auth-modal-close { position: absolute; top: 12px; right: 14px; border: 0; background: transparent; color: var(--text-tertiary); font-size: 24px; cursor: pointer; }
-.auth-modal-mark { color: var(--accent-primary); font-size: 26px; margin-bottom: 10px; }
+.auth-modal-mark {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-bottom: 12px;
+}
+.auth-modal-mark img {
+    filter: drop-shadow(0 4px 16px rgba(16, 163, 127, 0.4));
+}
 .auth-modal-kicker { margin: 0 0 6px; color: var(--accent-primary); font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
 .auth-modal-card h2 { margin: 0; color: var(--text-primary); font-size: 1.5rem; }
 .auth-modal-copy { margin: 10px 0 22px; color: var(--text-secondary); font-size: 0.9rem; line-height: 1.55; }
@@ -762,21 +827,29 @@ body {
 }
 
 .welcome-logo {
-    width: 52px;
-    height: 52px;
+    width: 64px;
+    height: 64px;
     margin-bottom: 20px;
-    border-radius: var(--radius-full);
-    background: var(--accent-gradient);
+    border-radius: 20px;
+    background: linear-gradient(135deg, rgba(16, 163, 127, 0.15), rgba(56, 189, 248, 0.08));
+    border: 1px solid rgba(255, 255, 255, 0.12);
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 0 30px rgba(16, 163, 127, 0.2);
+    box-shadow: 0 0 35px rgba(16, 163, 127, 0.22), inset 0 1px 1px rgba(255, 255, 255, 0.15);
+    transition: transform var(--transition-normal), box-shadow var(--transition-normal);
 }
 
-.welcome-logo svg {
-    width: 28px;
-    height: 28px;
-    color: white;
+.welcome-logo:hover {
+    transform: translateY(-2px) scale(1.03);
+    box-shadow: 0 0 45px rgba(16, 163, 127, 0.35), inset 0 1px 1px rgba(255, 255, 255, 0.2);
+}
+
+.welcome-logo img {
+    width: 42px;
+    height: 42px;
+    display: block;
+    filter: drop-shadow(0 2px 10px rgba(16, 163, 127, 0.35));
 }
 
 .welcome-message h2 {

@@ -119,8 +119,10 @@ async function loadAuthState() {
         const response = await fetch(`${API_BASE}/api/v1/auth/me`, { credentials: 'include', headers });
         const session = await response.json();
         const loggedIn = Boolean(session.authenticated);
-        document.getElementById('userName').textContent = loggedIn ? session.email : 'Guest account';
-        document.getElementById('userAvatar').textContent = loggedIn ? session.email.slice(0, 2).toUpperCase() : 'G';
+        const displayName = loggedIn ? (session.name || session.email || 'Account') : 'Guest account';
+        const avatarText = loggedIn ? (session.name || session.email || 'U').slice(0, 2).toUpperCase() : 'G';
+        document.getElementById('userName').textContent = displayName;
+        document.getElementById('userAvatar').textContent = avatarText;
         document.getElementById('userMenuEmail').textContent = loggedIn ? session.email : 'Not signed in';
         document.getElementById('userMenuProvider').textContent = loggedIn ? `Signed in with ${session.provider || 'account'}` : 'Two free questions available';
         document.getElementById('userMenuLogin').hidden = loggedIn;
@@ -128,6 +130,16 @@ async function loadAuthState() {
         document.querySelector('.user-auth-actions').hidden = loggedIn;
     } catch (error) {
         console.warn('Unable to load account state', error);
+        document.getElementById('userName').textContent = 'Guest account';
+        document.getElementById('userAvatar').textContent = 'G';
+        document.getElementById('userMenuEmail').textContent = 'Not signed in';
+        document.getElementById('userMenuProvider').textContent = 'Two free questions available';
+        const loginBtn = document.getElementById('userMenuLogin');
+        if (loginBtn) loginBtn.hidden = false;
+        const logoutBtn = document.getElementById('userMenuLogout');
+        if (logoutBtn) logoutBtn.hidden = true;
+        const authActions = document.querySelector('.user-auth-actions');
+        if (authActions) authActions.hidden = false;
     }
 }
 
@@ -542,11 +554,7 @@ function showWelcomeScreen() {
     el.chatMessagesInner.innerHTML = `
         <div class="welcome-message" id="welcomeMessage">
             <div class="welcome-logo">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M9 19l-5-5 5-5" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M15 5l5 5-5 5" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M13 3l-2 18" stroke-linecap="round"/>
-                </svg>
+                <img src="logo.svg" alt="Agentic RAG Logo" width="42" height="42">
             </div>
             <h2>Advanced RAG Assistant</h2>
             <p>Upload documents and ask questions. Get evidence-grounded answers with citations from your knowledge base.</p>

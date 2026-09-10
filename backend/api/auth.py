@@ -187,6 +187,7 @@ async def oauth_callback(provider: str, code: str, state: str, request: Request)
         profile = profile_response.json()
 
         email = profile.get("email")
+        name = profile.get("name") or profile.get("login")
         if provider == "github" and not email:
             emails_response = await client.get("https://api.github.com/user/emails", headers={"Authorization": f"Bearer {access_token}", "Accept": "application/json"})
             emails_response.raise_for_status()
@@ -195,7 +196,10 @@ async def oauth_callback(provider: str, code: str, state: str, request: Request)
         raise HTTPException(status_code=400, detail="No verified email was returned by the provider.")
 
     redirect = RedirectResponse(get_settings().auth_frontend_url, status_code=303)
-    session = json.dumps({"email": email, "provider": provider}, separators=(",", ":"))
+    session_data = {"email": email, "provider": provider}
+    if name:
+        session_data["name"] = name
+    session = json.dumps(session_data, separators=(",", ":"))
     redirect.set_cookie(SESSION_COOKIE, _sign(session), max_age=60 * 60 * 24 * 30, httponly=True, samesite="lax")
     redirect.delete_cookie(OAUTH_STATE_COOKIE)
     return redirect
@@ -254,9 +258,16 @@ async def me(request: Request):
     supabase_user = await get_supabase_user(request)
     session = get_session(request)
     user = supabase_user or session
+    name = None
+    if supabase_user:
+        user_meta = supabase_user.get("user_metadata") or {}
+        name = user_meta.get("full_name") or user_meta.get("name")
+    elif session:
+        name = session.get("name")
     return {
         "authenticated": user is not None,
         "email": user.get("email") if user else None,
+        "name": name,
         "provider": "supabase" if supabase_user else (session.get("provider") if session else None),
     }
 

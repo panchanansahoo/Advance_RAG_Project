@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+    <defs>
+        <linearGradient id="favG1" x1="6" y1="6" x2="42" y2="42" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#10a37f"/>
+            <stop offset="50%" stop-color="#38bdf8"/>
+            <stop offset="100%" stop-color="#a855f7"/>
+        </linearGradient>
+        <linearGradient id="favG2" x1="42" y1="6" x2="6" y2="42" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#ec4899"/>
+            <stop offset="100%" stop-color="#38bdf8"/>
+        </linearGradient>
+    </defs>
+    <path d="M24 4L41.32 14V34L24 44L6.68 34V14L24 4Z" stroke="url(#favG1)" stroke-width="3" stroke-linejoin="round"/>
+    <path d="M24 4V20M41.32 14L29 22M41.32 34L29 26M24 44V28M6.68 34L19 26M6.68 14L19 22" stroke="url(#favG1)" stroke-width="2" stroke-linecap="round" opacity="0.7"/>
+    <path d="M24 14L28 20L34 24L28 28L24 34L20 28L14 24L20 20Z" fill="url(#favG2)"/>
+    <circle cx="24" cy="24" r="3" fill="#ffffff"/>
+    <circle cx="24" cy="4" r="3" fill="#10a37f"/>
+    <circle cx="41.32" cy="14" r="3" fill="#38bdf8"/>
+    <circle cx="41.32" cy="34" r="3" fill="#818cf8"/>
+    <circle cx="24" cy="44" r="3" fill="#a855f7"/>
+    <circle cx="6.68" cy="34" r="3" fill="#c084fc"/>
+    <circle cx="6.68" cy="14" r="3" fill="#34d399"/>
+</svg>

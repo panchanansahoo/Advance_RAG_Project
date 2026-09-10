@@ -67,9 +67,12 @@ In your Render Service Dashboard, go to **Environment** and add:
 1. Log in to [Vercel](https://vercel.com).
 2. Click **Add New...** > **Project**.
 3. Import your GitHub repository `Advance_RAG_Project`.
-4. Keep the Framework Preset as **Other**.
-5. Root Directory can stay `./` (the root `vercel.json` already routes requests to `vanilla_frontend/`).
-6. Click **Deploy**.
+4. In the project configuration screen:
+   - **Framework Preset**: Select **Other** (do NOT choose FastAPI / Python).
+   - **Root Directory**: Click **Edit** and set it to **`vanilla_frontend`** (Recommended).
+   > [!TIP]
+   > Setting **Root Directory** to `vanilla_frontend` ensures Vercel only deploys the static frontend files and completely ignores the Python backend. If you keep Root Directory as `./`, the included `.vercelignore` and root `vercel.json` with `"framework": null` will prevent Vercel from attempting to detect or run FastAPI.
+5. Click **Deploy**.
 
 ### Step 3.2: Configure API Proxy to Render Backend
 If your Render service URL differs from `https://advanced-rag-backend.onrender.com`, update the destination URL in both:
