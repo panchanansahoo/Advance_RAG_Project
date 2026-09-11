@@ -7,6 +7,7 @@ import time
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,6 +18,15 @@ router = APIRouter(tags=["Health"])
 
 # Track server start time for uptime reporting
 _start_time = time.monotonic()
+
+
+@router.get("/api/v1/health/live")
+async def liveness_check():
+    """Confirm that the API process is running."""
+    return {
+        "status": "alive",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 @router.get("/api/v1/health")
@@ -109,3 +119,12 @@ async def health_check(db: AsyncSession = Depends(get_db)):
         "uptime": uptime_str,
         "checks": checks,
     }
+
+
+@router.get("/api/v1/health/ready")
+async def readiness_check(db: AsyncSession = Depends(get_db)):
+    """Return a non-2xx response when required dependencies are degraded."""
+    details = await health_check(db)
+    if details["status"] != "healthy":
+        return JSONResponse(status_code=503, content=details)
+    return details

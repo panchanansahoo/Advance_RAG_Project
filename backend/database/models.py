@@ -151,3 +151,21 @@ class CitationRecord(Base):
     content_snippet = Column(Text, nullable=True)
     relevance_score = Column(Float, default=0.0)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+
+
+class UsageEvent(Base):
+    """Per-query model usage and estimated cost for quota reporting."""
+
+    __tablename__ = "usage_events"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    owner_key = Column(String(512), nullable=False, index=True)
+    provider = Column(String(64), nullable=True)
+    model = Column(String(256), nullable=True)
+    route = Column(String(64), nullable=True)
+    input_tokens = Column(Integer, nullable=False, default=0)
+    output_tokens = Column(Integer, nullable=False, default=0)
+    total_tokens = Column(Integer, nullable=False, default=0)
+    estimated_cost_usd = Column(Float, nullable=False, default=0.0)
+    usage_source = Column(String(64), nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False, index=True)

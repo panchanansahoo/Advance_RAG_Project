@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     # ── Application ─────────────────────────────────────────
     app_name: str = "Advanced RAG"
     app_env: str = "development"
-    debug: bool = True
+    debug: bool = False
     log_level: str = "INFO"
     auth_secret: str = "change-this-auth-secret-in-production"
     auth_frontend_url: str = "http://localhost:8000"
@@ -174,6 +174,17 @@ class Settings(BaseSettings):
     def _warn_placeholder_keys(self) -> "Settings":
         """Emit a startup warning if API keys look like placeholders."""
         _log = logging.getLogger("backend.config")
+        if self.app_env.lower() in {"production", "prod"}:
+            if self.debug:
+                raise ValueError("DEBUG must be false in production")
+            if self.auth_secret.strip().lower() in {
+                "change-this-auth-secret-in-production",
+                "replace-with-a-long-random-secret",
+                "changeme",
+                "change-me",
+            }:
+                raise ValueError("AUTH_SECRET must be configured in production")
+
         placeholders = {"your-openai-api-key-here", "your-google-api-key-here", "", "changeme"}
         if self.openai_api_key and self.openai_api_key.get_secret_value().lower() in placeholders:
             _log.warning("OPENAI_API_KEY looks like a placeholder — OpenAI features will fail")
@@ -264,6 +275,11 @@ class Settings(BaseSettings):
 
     # ── Reliability & Verification (Phase 7) ───────────────
     verification_enabled: bool = True
+
+    # ── Usage Limits ───────────────────────────────────────
+    usage_window_days: int = 30
+    usage_max_tokens: int = 0  # 0 means unlimited
+    usage_max_cost_usd: float = 0.0  # 0 means unlimited
 
 
 # ── Singleton accessor ──────────────────────────────────────

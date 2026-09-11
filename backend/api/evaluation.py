@@ -11,9 +11,12 @@ import logging
 import os
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from pydantic import BaseModel, Field
 from typing import Any, Dict, List, Optional
+
+from backend.api.auth import is_authenticated
+from backend.config import get_settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/evaluation", tags=["Evaluation"])
@@ -38,12 +41,23 @@ class EvaluationRunResponse(BaseModel):
     status: str = "started"
 
 
+async def _require_evaluation_access(request: Request) -> None:
+    """Restrict benchmark data and execution to authenticated operators."""
+    internal_secret = request.headers.get("X-Internal-Secret")
+    if internal_secret and internal_secret == get_settings().auth_secret:
+        return
+    if await is_authenticated(request):
+        return
+    raise HTTPException(status_code=401, detail="Authentication required for evaluation access")
+
+
 @router.get("/results", response_model=EvaluationResultsResponse)
-async def get_evaluation_results():
+async def get_evaluation_results(request: Request):
     """
     Fetch the latest evaluation results.
     Returns the most recent benchmark run results, or defaults if no run exists yet.
     """
+    await _require_evaluation_access(request)
     if RESULTS_FILE.exists():
         try:
             with open(RESULTS_FILE, "r", encoding="utf-8") as f:
@@ -66,11 +80,12 @@ async def get_evaluation_results():
 
 
 @router.post("/run", response_model=EvaluationRunResponse)
-async def trigger_evaluation(background_tasks: BackgroundTasks):
+async def trigger_evaluation(request: Request, background_tasks: BackgroundTasks):
     """
     Trigger a benchmark evaluation run in the background.
     Results will be saved and accessible via GET /results.
     """
+    await _require_evaluation_access(request)
     if not DATASET_FILE.exists():
         raise HTTPException(status_code=404, detail="Benchmark dataset not found")
 
@@ -82,8 +97,9 @@ async def trigger_evaluation(background_tasks: BackgroundTasks):
 
 
 @router.get("/experiments")
-async def get_experiment_comparison():
+async def get_experiment_comparison(request: Request):
     """Fetch the latest multi-architecture experiment comparison report."""
+    await _require_evaluation_access(request)
     if EXPERIMENT_JSON_FILE.exists():
         try:
             with open(EXPERIMENT_JSON_FILE, "r", encoding="utf-8") as f:
@@ -98,8 +114,9 @@ async def get_experiment_comparison():
 
 
 @router.post("/experiments/run")
-async def trigger_experiment_comparison(background_tasks: BackgroundTasks):
+async def trigger_experiment_comparison(request: Request, background_tasks: BackgroundTasks):
     """Trigger a multi-architecture comparison run across all PRD §23 presets in the background."""
+    await _require_evaluation_access(request)
     if not DATASET_FILE.exists():
         raise HTTPException(status_code=404, detail="Benchmark dataset not found")
 

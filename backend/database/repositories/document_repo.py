@@ -82,6 +82,23 @@ class DocumentRepository:
         await self.session.refresh(doc)
         return doc
 
+    async def reset_for_retry(
+        self, document_id: UUID, owner_key: Optional[str] = None
+    ) -> Optional[Document]:
+        """Reset a failed document so the ingestion pipeline can run again."""
+        doc = await self.get_by_id_for_owner(document_id, owner_key=owner_key)
+        if doc is None:
+            return None
+        if doc.status != ProcessingStatus.FAILED:
+            return None
+        doc.status = ProcessingStatus.PENDING
+        doc.error_message = None
+        doc.chunk_count = 0
+        doc.page_count = 0
+        await self.session.commit()
+        await self.session.refresh(doc)
+        return doc
+
     async def delete(self, document_id: UUID, owner_key: Optional[str] = None) -> bool:
         doc = await self.get_by_id_for_owner(document_id, owner_key=owner_key)
         if doc is None:

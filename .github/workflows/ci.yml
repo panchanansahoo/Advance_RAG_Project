@@ -41,6 +41,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pytest pytest-asyncio
+          pip check
 
       - name: Verify Backend Code Compilation
         run: |
@@ -50,7 +51,13 @@ jobs:
         run: |
           pytest tests/ -v
         env:
-          APP_ENV: testing
+          APP_ENV: test
+          DEBUG: true
+          AUTH_SECRET: ci-test-secret
           DATABASE_PROVIDER: sqlite
-          VECTOR_DB_PROVIDER: qdrant
+          VECTOR_DB_PROVIDER: chroma
           ROUTING_PROVIDER: heuristic
+
+      - name: Check Frontend JavaScript Syntax
+        run: |
+          node --check vanilla_frontend/app.js

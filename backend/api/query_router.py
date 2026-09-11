@@ -24,6 +24,7 @@ from slowapi.util import get_remote_address
 
 from backend.database.connection import get_db
 from backend.database.models import Document
+from backend.database.models import UsageEvent
 from backend.database.repositories.conversation_repo import ConversationRepository
 from backend.generation.service import GenerationService
 from backend.schemas.queries import QueryRequest, QueryResponse
@@ -57,6 +58,8 @@ async def query(request_obj: QueryRequest, request: Request, response: Response,
     try:
         await enforce_question_access(request, response)
         owner_key = await get_user_key(request, response)
+        from backend.api.usage import enforce_usage_limits
+        await enforce_usage_limits(db, owner_key)
         query_start = time.perf_counter()
         # 0. Load conversation history (if conversation_id provided)
         conversation_messages = []
@@ -169,6 +172,23 @@ async def query(request_obj: QueryRequest, request: Request, response: Response,
         # 5. Record timing
         query_elapsed = time.perf_counter() - query_start
         response.retrieval_metadata["response_time_seconds"] = round(query_elapsed, 3)
+        usage = response.retrieval_metadata
+        try:
+            db.add(UsageEvent(
+                owner_key=owner_key,
+                provider=settings.llm_provider,
+                model=usage.get("llm_model", settings.llm_model),
+                route=usage.get("route"),
+                input_tokens=usage.get("estimated_input_tokens", 0),
+                output_tokens=usage.get("estimated_output_tokens", 0),
+                total_tokens=usage.get("estimated_total_tokens", 0),
+                estimated_cost_usd=usage.get("estimated_cost_usd", 0.0),
+                usage_source=usage.get("usage_source"),
+            ))
+            await db.commit()
+        except Exception as usage_error:
+            await db.rollback()
+            logger.warning("Failed to record usage event: %s", usage_error)
         logger.info(
             "Query completed in %.2fs | route=%s | query='%s'",
             query_elapsed,
@@ -208,6 +228,8 @@ async def query(request_obj: QueryRequest, request: Request, response: Response,
 
         return response
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error("Query failed: %s", e, exc_info=True)
         err_str = str(e).lower()
@@ -237,6 +259,8 @@ async def query_stream(request_obj: QueryRequest, request: Request, response: Re
     try:
         await enforce_question_access(request, response)
         owner_key = await get_user_key(request, response)
+        from backend.api.usage import enforce_usage_limits
+        await enforce_usage_limits(db, owner_key)
         conversation_messages = []
         conv_repo = ConversationRepository(db)
 
@@ -267,6 +291,7 @@ async def query_stream(request_obj: QueryRequest, request: Request, response: Re
 
                 streamed_answer = []
                 streamed_citations = []
+                streamed_metadata = {}
                 if request_obj.conversation_id:
                     yield json.dumps({"conversation_id": str(request_obj.conversation_id)}) + "\n"
 
@@ -290,8 +315,30 @@ async def query_stream(request_obj: QueryRequest, request: Request, response: Re
                             streamed_answer.append(event["chunk"])
                         if event.get("citations"):
                             streamed_citations = event["citations"]
+                        if event.get("metadata"):
+                            streamed_metadata = event["metadata"]
                     except (TypeError, json.JSONDecodeError):
                         continue
+
+                try:
+                    from backend.config import get_settings
+                    usage = streamed_metadata
+                    settings = get_settings()
+                    db.add(UsageEvent(
+                        owner_key=owner_key,
+                        provider=settings.llm_provider,
+                        model=usage.get("llm_model", settings.llm_model),
+                        route="rag",
+                        input_tokens=usage.get("estimated_input_tokens", 0),
+                        output_tokens=usage.get("estimated_output_tokens", 0),
+                        total_tokens=usage.get("estimated_total_tokens", 0),
+                        estimated_cost_usd=usage.get("estimated_cost_usd", 0.0),
+                        usage_source=usage.get("usage_source"),
+                    ))
+                    await db.commit()
+                except Exception as usage_error:
+                    await db.rollback()
+                    logger.warning("Failed to record streaming usage event: %s", usage_error)
 
                 if request_obj.conversation_id:
                     await conv_repo.add_message(
@@ -305,6 +352,7 @@ async def query_stream(request_obj: QueryRequest, request: Request, response: Re
                         role="assistant",
                         content="".join(streamed_answer),
                         citations=streamed_citations,
+                        metadata=streamed_metadata,
                         owner_key=owner_key,
                     )
             except Exception as e:
@@ -323,6 +371,8 @@ async def query_stream(request_obj: QueryRequest, request: Request, response: Re
                 stream_response.raw_headers.append(header)
         return stream_response
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error("Query stream failed: %s", e, exc_info=True)
         err_str = str(e).lower()
@@ -509,10 +559,19 @@ async def _handle_rag(
 
     # Phase 7: Reliability & Verification
     if settings.verification_enabled:
+        verification_started = time.perf_counter()
         verifier = get_verification_service()
         verification_result = await verifier.verify(
             request.query, response.answer, response.citations
         )
         response.answer = verification_result.revised_answer or response.answer
+        response.retrieval_metadata["verification_time_seconds"] = round(
+            time.perf_counter() - verification_started, 3
+        )
+        response.retrieval_metadata["verification_status"] = (
+            "revised" if verification_result.revised_answer else "passed"
+        )
+    else:
+        response.retrieval_metadata["verification_status"] = "disabled"
 
     return response

@@ -73,7 +73,12 @@ class GroqLLM(BaseLLM):
                 )
 
                 result = response.choices[0].message.content or ""
-                tokens_used = response.usage.total_tokens if response.usage else 0
+                self._last_usage = {
+                    "input_tokens": response.usage.prompt_tokens,
+                    "output_tokens": response.usage.completion_tokens,
+                    "total_tokens": response.usage.total_tokens,
+                } if response.usage else {}
+                tokens_used = self._last_usage.get("total_tokens", 0)
                 self._total_tokens_used += tokens_used
                 logger.info(
                     "Groq response: model=%s, tokens=%d, attempt=%d",

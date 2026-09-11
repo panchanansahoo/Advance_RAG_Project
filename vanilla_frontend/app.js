@@ -71,6 +71,7 @@ const el = {
     runExperimentsBtn: document.getElementById('runExperimentsBtn'),
     evaluationStatus: document.getElementById('evaluationStatus'),
     evaluationMetrics: document.getElementById('evaluationMetrics'),
+    usageSummary: document.getElementById('usageSummary'),
     evaluationExperiments: document.getElementById('evaluationExperiments'),
 };
 
@@ -101,14 +102,11 @@ async function initSupabase() {
             console.warn(`Supabase config returned HTTP ${response.status}`);
         }
     } catch (error) {
-        console.warn('Supabase Auth config fetch failed, using fallback:', error);
+        console.warn('Supabase Auth config fetch failed:', error);
     }
 
-    const fallbackUrl = 'https://rzohmftvdgdtafjzhydk.supabase.co';
-    const fallbackKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ6b2htZnR2ZGdkdGFmanpoeWRrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg3MDUzMTYsImV4cCI6MjEwNDI4MTMxNn0.dJdH3h5t1Y2QOsHpkToRQPy9zhgaN2jhd2rMSjBg1RY';
-
-    const rawUrl = (config && config.supabase_url) ? String(config.supabase_url).trim() : fallbackUrl;
-    const anonKey = (config && config.supabase_anon_key) ? String(config.supabase_anon_key).trim() : fallbackKey;
+    const rawUrl = config?.supabase_url ? String(config.supabase_url).trim() : '';
+    const anonKey = config?.supabase_anon_key ? String(config.supabase_anon_key).trim() : '';
     const cleanUrl = rawUrl.replace(/\/rest\/v1\/?$/, '').replace(/\/+$/, '');
 
     if (cleanUrl && anonKey && window.supabase) {
@@ -488,15 +486,47 @@ function initEvaluation() {
 async function loadEvaluationResults() {
     el.evaluationStatus.textContent = 'Loading latest results...';
     try {
+        const headers = await getAuthHeaders();
         const [resultsResponse, experimentsResponse] = await Promise.all([
-            fetch(`${API_BASE}/api/v1/evaluation/results`),
-            fetch(`${API_BASE}/api/v1/evaluation/experiments`),
+            fetch(`${API_BASE}/api/v1/evaluation/results`, { headers, credentials: 'same-origin' }),
+            fetch(`${API_BASE}/api/v1/evaluation/experiments`, { headers, credentials: 'same-origin' }),
         ]);
         if (!resultsResponse.ok) throw new Error('Evaluation results unavailable');
         renderEvaluationResults(await resultsResponse.json());
         if (experimentsResponse.ok) renderExperimentResults(await experimentsResponse.json());
+        await loadUsageSummary(headers);
     } catch (error) {
         el.evaluationStatus.textContent = sanitizeErrorMessage(error.message, 'Evaluation data is currently unavailable.');
+    }
+}
+
+async function loadUsageSummary(headers = null) {
+    if (!el.usageSummary) return;
+    try {
+        const authHeaders = headers || await getAuthHeaders();
+        const response = await fetch(`${API_BASE}/api/v1/usage/summary?days=30`, {
+            headers: authHeaders,
+            credentials: 'same-origin',
+        });
+        if (!response.ok) throw new Error('Usage data unavailable');
+        const usage = await response.json();
+        const tokenLimit = Number(usage.limits?.max_tokens || 0);
+        const costLimit = Number(usage.limits?.max_cost_usd || 0);
+        const totalTokens = Number(usage.total_tokens || 0);
+        const totalCost = Number(usage.estimated_cost_usd || 0);
+        const tokenPercent = tokenLimit > 0 ? Math.min(100, (totalTokens / tokenLimit) * 100) : 0;
+        const costPercent = costLimit > 0 ? Math.min(100, (totalCost / costLimit) * 100) : 0;
+        el.usageSummary.innerHTML = `
+            <div class="usage-summary-header"><h3>Usage, last 30 days</h3><span>${usage.query_count || 0} queries</span></div>
+            <div class="usage-metrics">
+                <div><span>Total tokens</span><strong>${totalTokens.toLocaleString()}${tokenLimit > 0 ? ` / ${tokenLimit.toLocaleString()}` : ''}</strong></div>
+                <div><span>Estimated cost</span><strong>$${totalCost.toFixed(4)}${costLimit > 0 ? ` / $${costLimit.toFixed(2)}` : ''}</strong></div>
+            </div>
+            ${tokenLimit > 0 ? `<div class="usage-limit"><div><span>Token limit</span><strong>${tokenPercent.toFixed(0)}%</strong></div><div class="usage-bar"><i style="width:${tokenPercent}%"></i></div></div>` : ''}
+            ${costLimit > 0 ? `<div class="usage-limit"><div><span>Cost limit</span><strong>${costPercent.toFixed(0)}%</strong></div><div class="usage-bar"><i style="width:${costPercent}%"></i></div></div>` : ''}
+        `;
+    } catch (error) {
+        el.usageSummary.innerHTML = `<div class="evaluation-empty">${escapeHtml(error.message)}</div>`;
     }
 }
 
@@ -525,7 +555,7 @@ function renderExperimentResults(data) {
 async function runEvaluation() {
     setEvaluationBusy(el.runEvaluationBtn, 'Running benchmark...');
     try {
-        const response = await fetch(`${API_BASE}/api/v1/evaluation/run`, { method: 'POST' });
+        const response = await fetch(`${API_BASE}/api/v1/evaluation/run`, { method: 'POST', headers: await getAuthHeaders(), credentials: 'same-origin' });
         if (!response.ok) throw new Error((await response.json()).detail || 'Unable to start benchmark');
         el.evaluationStatus.textContent = 'Benchmark running in the background...';
         pollEvaluationResults();
@@ -538,7 +568,7 @@ async function runEvaluation() {
 async function runExperiments() {
     setEvaluationBusy(el.runExperimentsBtn, 'Comparing...');
     try {
-        const response = await fetch(`${API_BASE}/api/v1/evaluation/experiments/run`, { method: 'POST' });
+        const response = await fetch(`${API_BASE}/api/v1/evaluation/experiments/run`, { method: 'POST', headers: await getAuthHeaders(), credentials: 'same-origin' });
         if (!response.ok) throw new Error((await response.json()).detail || 'Unable to start comparison');
         el.evaluationStatus.textContent = 'Architecture comparison running in the background...';
         setTimeout(async () => { await loadEvaluationResults(); setEvaluationBusy(el.runExperimentsBtn, 'Compare architectures', false); }, 3000);
@@ -1184,6 +1214,13 @@ function renderDocuments() {
                         <span class="doc-status ${doc.status}">${getStatusLabel(doc.status, doc.chunk_count)}</span>
                     </div>
                 </div>
+                ${doc.status === 'failed' ? `
+                    <button class="doc-retry" onclick="retryDocument('${doc.id}', event)" title="Retry processing" aria-label="Retry processing">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M20 11a8.1 8.1 0 0 0-15.5-2M4 5v4h4M4 13a8.1 8.1 0 0 0 15.5 2M20 19v-4h-4" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </button>
+                ` : ''}
                 <button class="doc-delete" onclick="deleteDocument('${doc.id}', event)" title="Delete">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14z" stroke-linecap="round" stroke-linejoin="round"/>
@@ -1192,6 +1229,26 @@ function renderDocuments() {
             </div>
         `;
     }).join('');
+}
+
+async function retryDocument(docId, event) {
+    event.stopPropagation();
+    try {
+        const headers = await getAuthHeaders({ 'Content-Type': 'application/json' });
+        const response = await fetch(`${API_BASE}/api/v1/documents/${docId}/retry`, {
+            method: 'POST',
+            headers,
+            credentials: 'same-origin',
+        });
+        if (!response.ok) {
+            const detail = await response.json().catch(() => ({}));
+            throw new Error(detail.detail || 'Unable to retry document processing');
+        }
+        showToast('Document processing restarted', 'info');
+        await loadDocuments();
+    } catch (error) {
+        showToast(sanitizeErrorMessage(error.message, 'Unable to retry document processing.'), 'error');
+    }
 }
 
 function toggleDocSelection(docId) {

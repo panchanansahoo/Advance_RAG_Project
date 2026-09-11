@@ -42,6 +42,8 @@ graph LR
 ### Step 2.2: Add Environment Variables in Render
 In your Render Service Dashboard, go to **Environment** and add:
 - `APP_ENV`: `production`
+- `DEBUG`: `false`
+- `AUTH_SECRET`: *(long random secret, required in production)*
 - `PORT`: `10000`
 - `CORS_ORIGINS`: `["*"]`
 - `LLM_PROVIDER`: `gemini` (or `openai` / `groq`)
@@ -54,6 +56,12 @@ In your Render Service Dashboard, go to **Environment** and add:
 - `VECTOR_DB_PROVIDER`: `chroma` (or `qdrant`)
 - `SUPABASE_URL`: *(e.g., `https://<project-ref>.supabase.co`)*
 - `SUPABASE_ANON_KEY`: *(your Supabase anon/public key)*
+- `USAGE_WINDOW_DAYS`: `30`
+- `USAGE_MAX_TOKENS`: `0` *(unlimited; set a positive value to enforce a rolling token limit)*
+- `USAGE_MAX_COST_USD`: `0` *(unlimited; set a positive value to enforce an estimated cost limit)*
+
+The project uses the current `google-genai` SDK for Gemini text, embeddings, and vision.
+Configure `GOOGLE_API_KEY` when either the Gemini LLM or embedding/VLM providers are enabled.
 
 ### Step 2.2: Verify Health Check
 Once deployed, verify the service is running:

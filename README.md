@@ -22,8 +22,11 @@ cp .env.example .env
 ### 2. Start Infrastructure
 
 ```bash
-# Start PostgreSQL and Qdrant
+# Start PostgreSQL; the default app vector store is local ChromaDB
 docker-compose up -d
+
+# Optional: start Qdrant when VECTOR_DB_PROVIDER=qdrant
+docker-compose --profile qdrant up -d
 ```
 
 ### 3. Install Dependencies
@@ -63,7 +66,7 @@ Navigate to **http://localhost:8000** in your browser.
 │   └── schemas/              # Pydantic request/response models
 ├── frontend/                 # Web UI (HTML/CSS/JS)
 ├── tests/                    # Test suite
-├── docker-compose.yml        # PostgreSQL + Qdrant services
+├── docker-compose.yml        # PostgreSQL + optional Qdrant service
 └── requirements.txt          # Python dependencies
 ```
 
@@ -89,6 +92,13 @@ pytest tests/ -v
 ```
 User Query → Embedding → Vector Search → Top-K Chunks → LLM + Context → Grounded Answer + Citations
 ```
+
+The default vector backend is ChromaDB. Qdrant is optional; set `VECTOR_DB_PROVIDER=qdrant`
+and start the `qdrant` Compose profile before switching.
+
+Production requires a non-placeholder `AUTH_SECRET`. Usage limits are disabled by default;
+set `USAGE_MAX_TOKENS` or `USAGE_MAX_COST_USD` to a positive value to enforce limits over
+`USAGE_WINDOW_DAYS`.
 
 ## 📋 Development Phases
 

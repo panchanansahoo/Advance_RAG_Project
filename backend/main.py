@@ -201,6 +201,7 @@ def create_app() -> FastAPI:
     from backend.api.query_router import router as query_router
     from backend.api.conversations import router as conversations_router
     from backend.api.evaluation import router as evaluation_router
+    from backend.api.usage import router as usage_router
     from backend.ingestion.router import router as ingestion_router
 
     app.include_router(health_router)
@@ -209,6 +210,7 @@ def create_app() -> FastAPI:
     app.include_router(query_router)
     app.include_router(conversations_router)
     app.include_router(evaluation_router)
+    app.include_router(usage_router)
 
     # ── Root & Static Mounts ───────────────────────────────
     import os

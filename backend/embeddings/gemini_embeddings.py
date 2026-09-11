@@ -44,21 +44,20 @@ class GeminiEmbeddingProvider(BaseEmbeddingProvider):
             self._dimension = 3072 if "gemini-embedding" in model_name else 768
 
         self._api_key = api_key
-        self._configured = False
+        self._client = None
 
-    def _ensure_configured(self):
-        if not self._configured:
-            import google.generativeai as genai
+    def _get_client(self):
+        if self._client is None:
+            from google import genai
             key = self._api_key.get_secret_value() if hasattr(self._api_key, "get_secret_value") else str(self._api_key)
-            genai.configure(api_key=key)
-            self._configured = True
+            self._client = genai.Client(api_key=key)
+        return self._client
 
     async def embed(self, texts: List[str]) -> List[List[float]]:
         if not texts:
             return []
 
-        self._ensure_configured()
-        import google.generativeai as genai
+        client = self._get_client()
 
         # Batch in chunks of up to 100 to stay within API limits
         chunk_size = 100
@@ -67,10 +66,9 @@ class GeminiEmbeddingProvider(BaseEmbeddingProvider):
         for i in range(0, len(texts), chunk_size):
             chunk = texts[i : i + chunk_size]
             try:
-                result = await genai.embed_content_async(
+                result = await client.aio.models.embed_content(
                     model=self._model_name,
-                    content=chunk,
-                    task_type="retrieval_document",
+                    contents=chunk,
                 )
             except Exception as exc:
                 err_str = str(exc).lower()
@@ -82,31 +80,25 @@ class GeminiEmbeddingProvider(BaseEmbeddingProvider):
                     )
                     self._model_name = "models/gemini-embedding-001"
                     self._dimension = 3072
-                    result = await genai.embed_content_async(
+                    result = await client.aio.models.embed_content(
                         model=self._model_name,
-                        content=chunk,
-                        task_type="retrieval_document",
+                        contents=chunk,
                     )
                 else:
                     raise
 
-            embeddings = result.get("embedding", [])
-            # If a single item was returned, ensure it's a list of lists
-            if embeddings and isinstance(embeddings[0], float):
-                embeddings = [embeddings]
+            embeddings = [item.values for item in (result.embeddings or [])]
             all_embeddings.extend(embeddings)
 
         return all_embeddings
 
     async def embed_query(self, query: str) -> List[float]:
-        self._ensure_configured()
-        import google.generativeai as genai
+        client = self._get_client()
 
         try:
-            result = await genai.embed_content_async(
+            result = await client.aio.models.embed_content(
                 model=self._model_name,
-                content=query,
-                task_type="retrieval_query",
+                contents=query,
             )
         except Exception as exc:
             err_str = str(exc).lower()
@@ -118,15 +110,14 @@ class GeminiEmbeddingProvider(BaseEmbeddingProvider):
                 )
                 self._model_name = "models/gemini-embedding-001"
                 self._dimension = 3072
-                result = await genai.embed_content_async(
+                result = await client.aio.models.embed_content(
                     model=self._model_name,
-                    content=query,
-                    task_type="retrieval_query",
+                    contents=query,
                 )
             else:
                 raise
 
-        return result.get("embedding", [])
+        return result.embeddings[0].values if result.embeddings else []
 
     @property
     def dimension(self) -> int:

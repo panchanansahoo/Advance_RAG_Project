@@ -14,6 +14,7 @@ class BaseLLM(ABC):
 
     def __init__(self):
         self._total_tokens_used: int = 0
+        self._last_usage: Dict[str, int] = {}
 
     @abstractmethod
     async def generate(
@@ -59,3 +60,8 @@ class BaseLLM(ABC):
     def total_tokens_used(self) -> int:
         """Cumulative token usage across all calls for this provider instance."""
         return self._total_tokens_used
+
+    @property
+    def last_usage(self) -> Dict[str, int]:
+        """Token usage reported by the most recent non-streaming call."""
+        return dict(self._last_usage)

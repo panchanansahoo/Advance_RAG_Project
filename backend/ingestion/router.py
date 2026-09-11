@@ -199,6 +199,43 @@ async def get_document(
     )
 
 
+@router.post("/{document_id}/retry", response_model=DocumentResponse)
+async def retry_document(
+    document_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+):
+    """Retry ingestion for a failed document owned by the current user."""
+    doc_repo = DocumentRepository(db)
+    owner_key = await get_user_key(request, response)
+    document = await doc_repo.reset_for_retry(document_id, owner_key=owner_key)
+    if document is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Only failed documents can be retried",
+        )
+
+    background_tasks.add_task(_process_document, document_id)
+    return DocumentResponse(
+        id=document.id,
+        filename=document.filename,
+        title=document.title,
+        description=document.description,
+        document_type=document.document_type,
+        file_size=document.file_size,
+        status=document.status,
+        error_message=document.error_message,
+        chunk_count=document.chunk_count or 0,
+        page_count=document.page_count or 0,
+        tags=document.tags or [],
+        metadata=document.metadata_ or {},
+        created_at=document.created_at,
+        updated_at=document.updated_at,
+    )
+
+
 @router.delete("/{document_id}", status_code=204)
 async def delete_document(
     document_id: uuid.UUID,
@@ -213,12 +250,15 @@ async def delete_document(
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    # Delete vectors from vector store
+    cleanup_errors = []
+
+    # Delete vectors from vector store before removing the database record.
     try:
         vector_store = get_vector_store_instance()
         await vector_store.delete_by_filter({"document_id": str(document_id)})
     except Exception as e:
-        logger.warning("Failed to delete vectors: %s", e)
+        cleanup_errors.append("vector store")
+        logger.error("Failed to delete vectors for %s: %s", document_id, e, exc_info=True)
 
     # Remove from BM25 index
     try:
@@ -226,7 +266,8 @@ async def delete_document(
         bm25_index = get_bm25_index()
         bm25_index.remove_document(str(document_id))
     except Exception as e:
-        logger.warning("Failed to remove document from BM25 index: %s", e)
+        cleanup_errors.append("BM25 index")
+        logger.error("Failed to remove document from BM25 index: %s", e, exc_info=True)
 
     # Delete file from disk
     try:
@@ -234,7 +275,15 @@ async def delete_document(
         if upload_dir.exists():
             shutil.rmtree(upload_dir)
     except Exception as e:
-        logger.warning("Failed to delete file: %s", e)
+        cleanup_errors.append("uploaded file")
+        logger.error("Failed to delete file for %s: %s", document_id, e, exc_info=True)
+
+    if cleanup_errors:
+        resources = ", ".join(cleanup_errors)
+        raise HTTPException(
+            status_code=503,
+            detail=f"Document cleanup incomplete ({resources}). The document was not deleted; please retry.",
+        )
 
     # Delete from database (cascades to chunks)
     await doc_repo.delete(document_id, owner_key=owner_key)

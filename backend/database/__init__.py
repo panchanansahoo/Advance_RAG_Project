@@ -5,6 +5,7 @@ from backend.database.models import (
     Conversation,
     Document,
     Message,
+    UsageEvent,
 )
 from backend.database.repositories import ChunkRepository, DocumentRepository
 
@@ -18,6 +19,7 @@ __all__ = [
     "Conversation",
     "Message",
     "CitationRecord",
+    "UsageEvent",
     "DocumentRepository",
     "ChunkRepository",
 ]

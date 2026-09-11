@@ -39,9 +39,8 @@ class GeminiLLM(BaseLLM):
 
     def _get_client(self):
         if self._client is None:
-            import google.generativeai as genai
-            genai.configure(api_key=self._api_key)
-            self._client = genai.GenerativeModel(self._model)
+            from google import genai
+            self._client = genai.Client(api_key=self._api_key)
         return self._client
 
     async def generate(
@@ -65,18 +64,26 @@ class GeminiLLM(BaseLLM):
         last_error: Optional[Exception] = None
         for attempt in range(_MAX_RETRIES):
             try:
+                from google.genai import types
                 response = await asyncio.wait_for(
-                    client.generate_content_async(
-                        gemini_prompt,
-                        generation_config={
-                            "temperature": temperature or self._temperature,
-                            "max_output_tokens": max_tokens or self._max_tokens,
-                        },
+                    client.aio.models.generate_content(
+                        model=self._model,
+                        contents=gemini_prompt,
+                        config=types.GenerateContentConfig(
+                            temperature=temperature or self._temperature,
+                            max_output_tokens=max_tokens or self._max_tokens,
+                        ),
                     ),
                     timeout=self._timeout,
                 )
 
                 result = response.text or ""
+                usage = getattr(response, "usage_metadata", None)
+                self._last_usage = {
+                    "input_tokens": getattr(usage, "prompt_token_count", 0),
+                    "output_tokens": getattr(usage, "candidates_token_count", 0),
+                    "total_tokens": getattr(usage, "total_token_count", 0),
+                } if usage else {}
                 # Rough token estimate for tracking (Gemini doesn't always expose usage)
                 self._total_tokens_used += len(result) // 4 + len(gemini_prompt) // 4
                 logger.info("Gemini response: model=%s, attempt=%d", self._model, attempt + 1)
@@ -127,14 +134,15 @@ class GeminiLLM(BaseLLM):
         last_error: Optional[Exception] = None
         for attempt in range(_MAX_RETRIES):
             try:
+                from google.genai import types
                 response = await asyncio.wait_for(
-                    client.generate_content_async(
-                        gemini_prompt,
-                        generation_config={
-                            "temperature": temperature or self._temperature,
-                            "max_output_tokens": max_tokens or self._max_tokens,
-                        },
-                        stream=True,
+                    client.aio.models.generate_content_stream(
+                        model=self._model,
+                        contents=gemini_prompt,
+                        config=types.GenerateContentConfig(
+                            temperature=temperature or self._temperature,
+                            max_output_tokens=max_tokens or self._max_tokens,
+                        ),
                     ),
                     timeout=self._timeout,
                 )

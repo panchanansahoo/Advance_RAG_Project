@@ -27,9 +27,10 @@ services:
       timeout: 5s
       retries: 5
 
-  # ── Qdrant Vector Database ───────────────────────────────
+  # ── Qdrant Vector Database (optional production backend) ──
   qdrant:
     image: qdrant/qdrant:v1.12.4
+    profiles: ["qdrant"]
     container_name: rag-qdrant
     restart: unless-stopped
     ports:
@@ -43,7 +44,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # ── Neo4j (Opt-in / Planned: docker-compose --profile graph up -d) ──
+  # ── Neo4j (opt-in: docker-compose --profile graph up -d) ──
   neo4j:
     image: neo4j:5.20.0-community
     container_name: rag-neo4j

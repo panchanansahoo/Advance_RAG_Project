@@ -5,12 +5,16 @@ services:
     dockerfilePath: ./Dockerfile
     region: oregon # Supported: oregon, ohio, frankfurt, singapore
     plan: starter # Options: 'free' or 'starter' (starter recommended for memory-intensive PDF/OCR)
-    healthCheckPath: /api/v1/health
+    healthCheckPath: /api/v1/health/ready
     envVars:
       - key: APP_ENV
         value: production
+      - key: DEBUG
+        value: "false"
       - key: PORT
         value: 10000
+      - key: AUTH_SECRET
+        sync: false # Set to a long random secret in Render Dashboard
       - key: CORS_ORIGINS
         value: '["*"]' # Allows requests from Vercel frontend
       - key: LLM_PROVIDER
@@ -35,3 +39,9 @@ services:
         sync: false # Set in Render Dashboard (e.g. https://<project-ref>.supabase.co)
       - key: SUPABASE_ANON_KEY
         sync: false # Set in Render Dashboard (anon public key)
+      - key: USAGE_WINDOW_DAYS
+        value: "30"
+      - key: USAGE_MAX_TOKENS
+        value: "0"
+      - key: USAGE_MAX_COST_USD
+        value: "0"

@@ -14,11 +14,11 @@ class TestGeminiVLM:
     @patch("backend.processing.vlm.gemini_vlm.genai")
     @pytest.mark.asyncio
     async def test_analyze_image_success(self, mock_genai):
-        mock_model = MagicMock()
         mock_response = MagicMock()
         mock_response.text = "A beautiful sunset over the mountains."
-        mock_model.generate_content.return_value = mock_response
-        mock_genai.GenerativeModel.return_value = mock_model
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = mock_response
+        mock_genai.Client.return_value = mock_client
 
         vlm = GeminiVLM()
         image = Image.new("RGB", (100, 100))
@@ -26,17 +26,17 @@ class TestGeminiVLM:
         result = await vlm.analyze_image(image, prompt="What is this?")
         
         assert result == "A beautiful sunset over the mountains."
-        mock_model.generate_content.assert_called_once()
-        args = mock_model.generate_content.call_args[0][0]
-        assert "What is this?" in args
-        assert image in args
+        mock_client.models.generate_content.assert_called_once()
+        call = mock_client.models.generate_content.call_args
+        assert call.kwargs["model"] == "gemini-1.5-flash"
+        assert "What is this?" in call.kwargs["contents"][0]
 
     @patch("backend.processing.vlm.gemini_vlm.genai")
     @pytest.mark.asyncio
     async def test_analyze_image_failure(self, mock_genai):
-        mock_model = MagicMock()
-        mock_model.generate_content.side_effect = Exception("API Error")
-        mock_genai.GenerativeModel.return_value = mock_model
+        mock_client = MagicMock()
+        mock_client.models.generate_content.side_effect = Exception("API Error")
+        mock_genai.Client.return_value = mock_client
 
         vlm = GeminiVLM()
         image = Image.new("RGB", (100, 100))
