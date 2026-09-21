@@ -18,7 +18,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends, Request, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
@@ -98,11 +98,11 @@ async def query(request_obj: QueryRequest, request: Request, response: Response,
         image_file_paths = []
 
         if request_obj.document_ids:
+            doc_filters = [Document.id.in_(request_obj.document_ids)]
+            if owner_key is not None:
+                doc_filters.append(or_(Document.owner_key == owner_key, Document.owner_key.is_(None)))
             result = await db.execute(
-                select(Document).where(
-                    Document.id.in_(request_obj.document_ids),
-                    Document.owner_key == owner_key,
-                )
+                select(Document).where(*doc_filters)
             )
             docs = result.scalars().all()
             for doc in docs:

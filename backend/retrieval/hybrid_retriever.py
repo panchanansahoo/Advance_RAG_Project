@@ -103,9 +103,8 @@ class HybridRetriever:
                 filters = None
                 if doc_id_strs:
                     filters = {"document_id": doc_id_strs}
-                if owner_key is not None:
-                    filters = filters or {}
-                    filters["owner_key"] = owner_key
+                elif owner_key is not None:
+                    filters = {"owner_key": owner_key}
                 vector_top_k = max(top_k * 3, self.settings.bm25_top_k)
                 vector_results = await self.vector_store.search(
                     query_embedding=query_embedding,

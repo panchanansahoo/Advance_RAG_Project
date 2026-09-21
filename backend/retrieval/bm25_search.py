@@ -191,10 +191,13 @@ class BM25Index:
                 continue
 
             # Apply document filter
-            if document_ids and payload.get("document_id") not in document_ids:
-                continue
-            if owner_key is not None and payload.get("owner_key") != owner_key:
-                continue
+            if document_ids:
+                if payload.get("document_id") not in document_ids:
+                    continue
+            elif owner_key is not None:
+                doc_owner = payload.get("owner_key")
+                if doc_owner is not None and doc_owner != "" and doc_owner != "None" and doc_owner != owner_key:
+                    continue
 
             scored_results.append((score, payload))
 

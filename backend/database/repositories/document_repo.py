@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import List, Optional
 from uuid import UUID
 
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.models import Document
@@ -32,7 +32,7 @@ class DocumentRepository:
     ) -> Optional[Document]:
         filters = [Document.id == document_id]
         if owner_key is not None:
-            filters.append(Document.owner_key == owner_key)
+            filters.append(or_(Document.owner_key == owner_key, Document.owner_key.is_(None)))
         result = await self.session.execute(
             select(Document).where(*filters)
         )
@@ -41,7 +41,7 @@ class DocumentRepository:
     async def list_all(
         self, skip: int = 0, limit: int = 50, owner_key: Optional[str] = None
     ) -> tuple[List[Document], int]:
-        filters = [Document.owner_key == owner_key] if owner_key is not None else []
+        filters = [or_(Document.owner_key == owner_key, Document.owner_key.is_(None))] if owner_key is not None else []
         # Count
         count_result = await self.session.execute(
             select(func.count(Document.id)).where(*filters)

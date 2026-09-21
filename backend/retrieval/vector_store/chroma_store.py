@@ -30,12 +30,18 @@ class ChromaVectorStore(BaseVectorStore):
             logger.info("ChromaDB initialized at %s", self.persist_dir)
         return self._client
 
+    def _ensure_collection(self, collection_name: str = "documents"):
+        if self._collection is None:
+            client = self._get_client()
+            self._collection = client.get_or_create_collection(
+                name=collection_name,
+                metadata={"hnsw:space": "cosine"},
+            )
+            logger.info("ChromaDB collection '%s' ready", collection_name)
+        return self._collection
+
     async def initialize(self, collection_name: str, dimension: int) -> None:
-        client = self._get_client()
-        self._collection = client.get_or_create_collection(
-            name=collection_name,
-            metadata={"hnsw:space": "cosine"},
-        )
+        self._ensure_collection(collection_name)
         logger.info("ChromaDB collection '%s' ready", collection_name)
 
     async def add(
@@ -44,8 +50,7 @@ class ChromaVectorStore(BaseVectorStore):
         embeddings: List[List[float]],
         payloads: Optional[List[Dict[str, Any]]] = None,
     ) -> None:
-        if self._collection is None:
-            raise RuntimeError("Collection not initialized")
+        collection = self._ensure_collection()
 
         metadatas = payloads if payloads else [{}] * len(ids)
         # ChromaDB requires string values in metadata
@@ -54,7 +59,7 @@ class ChromaVectorStore(BaseVectorStore):
         ]
 
         try:
-            self._collection.upsert(
+            collection.upsert(
                 ids=ids,
                 embeddings=embeddings,
                 metadatas=clean_metadatas,
@@ -62,14 +67,14 @@ class ChromaVectorStore(BaseVectorStore):
             logger.info("Upserted %d vectors to ChromaDB", len(ids))
         except Exception as e:
             if "dimension" in str(e).lower() or "dimensionality" in str(e).lower():
-                logger.warning("ChromaDB dimension mismatch (%s). Recreating collection '%s'...", e, self._collection.name)
+                logger.warning("ChromaDB dimension mismatch (%s). Recreating collection '%s'...", e, collection.name)
                 client = self._get_client()
                 try:
-                    client.delete_collection(self._collection.name)
+                    client.delete_collection(collection.name)
                 except Exception:
                     pass
                 self._collection = client.get_or_create_collection(
-                    name=self._collection.name,
+                    name=collection.name,
                     metadata={"hnsw:space": "cosine"},
                 )
                 self._collection.upsert(
@@ -87,8 +92,7 @@ class ChromaVectorStore(BaseVectorStore):
         top_k: int = 5,
         filters: Optional[Dict[str, Any]] = None,
     ) -> List[VectorSearchResult]:
-        if self._collection is None:
-            raise RuntimeError("Collection not initialized")
+        collection = self._ensure_collection()
 
         where_filter = None
         if filters:
@@ -109,7 +113,7 @@ class ChromaVectorStore(BaseVectorStore):
             ]}
 
         try:
-            results = self._collection.query(
+            results = collection.query(
                 query_embeddings=[query_embedding],
                 n_results=top_k,
                 where=where_filter,
@@ -137,17 +141,14 @@ class ChromaVectorStore(BaseVectorStore):
         return search_results
 
     async def delete(self, ids: List[str]) -> None:
-        if self._collection is None:
-            raise RuntimeError("Collection not initialized")
-        self._collection.delete(ids=ids)
+        collection = self._ensure_collection()
+        collection.delete(ids=ids)
 
     async def delete_by_filter(self, filters: Dict[str, Any]) -> None:
-        if self._collection is None:
-            raise RuntimeError("Collection not initialized")
+        collection = self._ensure_collection()
         where = {k: {"$eq": str(v)} for k, v in filters.items()}
-        self._collection.delete(where=where)
+        collection.delete(where=where)
 
     async def count(self) -> int:
-        if self._collection is None:
-            raise RuntimeError("Collection not initialized")
-        return self._collection.count()
+        collection = self._ensure_collection()
+        return collection.count()

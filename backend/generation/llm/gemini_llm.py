@@ -66,58 +66,61 @@ class GeminiLLM(BaseLLM):
             **kwargs,
         )
 
+        models_to_try = [self._model]
+        for fb in ["gemini-flash-latest", "gemini-3.5-flash-lite", "gemini-3.5-flash"]:
+            if fb not in models_to_try:
+                models_to_try.append(fb)
+
         last_error: Optional[Exception] = None
-        for attempt in range(_MAX_RETRIES):
-            try:
-                response = await asyncio.wait_for(
-                    client.aio.models.generate_content(
-                        model=self._model,
-                        contents=gemini_contents,
-                        config=config,
-                    ),
-                    timeout=self._timeout,
-                )
+        for current_model in models_to_try:
+            for attempt in range(_MAX_RETRIES):
+                try:
+                    response = await asyncio.wait_for(
+                        client.aio.models.generate_content(
+                            model=current_model,
+                            contents=gemini_contents,
+                            config=config,
+                        ),
+                        timeout=self._timeout,
+                    )
 
-                result = response.text or ""
-                usage = getattr(response, "usage_metadata", None)
-                self._last_usage = {
-                    "input_tokens": getattr(usage, "prompt_token_count", 0),
-                    "output_tokens": getattr(usage, "candidates_token_count", 0),
-                    "total_tokens": getattr(usage, "total_token_count", 0),
-                } if usage else {}
-                # Rough token estimate for tracking (Gemini doesn't always expose usage)
-                prompt_text = " ".join(m.get("content", "") for m in messages)
-                self._total_tokens_used += len(result) // 4 + len(prompt_text) // 4
-                logger.info("Gemini response: model=%s, attempt=%d", self._model, attempt + 1)
-                return result
+                    result = response.text or ""
+                    usage = getattr(response, "usage_metadata", None)
+                    self._last_usage = {
+                        "input_tokens": getattr(usage, "prompt_token_count", 0),
+                        "output_tokens": getattr(usage, "candidates_token_count", 0),
+                        "total_tokens": getattr(usage, "total_token_count", 0),
+                    } if usage else {}
+                    prompt_text = " ".join(m.get("content", "") for m in messages)
+                    self._total_tokens_used += len(result) // 4 + len(prompt_text) // 4
+                    logger.info("Gemini response: model=%s, attempt=%d", current_model, attempt + 1)
+                    return result
 
-            except asyncio.TimeoutError:
-                last_error = TimeoutError(
-                    f"Gemini API call timed out after {self._timeout}s"
-                )
-                logger.warning(
-                    "Gemini timeout on attempt %d/%d", attempt + 1, _MAX_RETRIES
-                )
-            except Exception as e:
-                last_error = e
-                err_str = str(e).lower()
-                # Only retry on transient errors
-                is_transient = any(
-                    kw in err_str
-                    for kw in ("rate limit", "quota", "503", "500", "overloaded", "resource")
-                )
-                if not is_transient:
-                    raise  # Non-transient errors fail immediately
-                logger.warning(
-                    "Gemini transient error on attempt %d/%d: %s",
-                    attempt + 1, _MAX_RETRIES, e,
-                )
+                except asyncio.TimeoutError:
+                    last_error = TimeoutError(
+                        f"Gemini API call timed out after {self._timeout}s on {current_model}"
+                    )
+                    logger.warning(
+                        "Gemini timeout on attempt %d/%d (model=%s)", attempt + 1, _MAX_RETRIES, current_model
+                    )
+                except Exception as e:
+                    last_error = e
+                    err_str = str(e).lower()
+                    is_transient = any(
+                        kw in err_str
+                        for kw in ("rate limit", "quota", "503", "500", "overloaded", "resource", "not_found", "404")
+                    )
+                    logger.warning(
+                        "Gemini error on attempt %d/%d (model=%s): %s",
+                        attempt + 1, _MAX_RETRIES, current_model, e,
+                    )
+                    if not is_transient:
+                        break  # Try next model
 
-            # Wait before retry (skip on last attempt)
-            if attempt < _MAX_RETRIES - 1:
-                await asyncio.sleep(_RETRY_DELAYS[attempt])
+                if attempt < _MAX_RETRIES - 1:
+                    await asyncio.sleep(_RETRY_DELAYS[attempt])
 
-        raise last_error or RuntimeError("Gemini LLM failed after all retries")
+        raise last_error or RuntimeError("Gemini LLM failed after all retries and fallbacks")
 
     async def generate_stream(
         self,
@@ -138,49 +141,58 @@ class GeminiLLM(BaseLLM):
             **kwargs,
         )
 
+        models_to_try = [self._model]
+        for fb in ["gemini-flash-latest", "gemini-3.5-flash-lite", "gemini-3.5-flash"]:
+            if fb not in models_to_try:
+                models_to_try.append(fb)
+
         last_error: Optional[Exception] = None
-        for attempt in range(_MAX_RETRIES):
-            try:
-                response = await asyncio.wait_for(
-                    client.aio.models.generate_content_stream(
-                        model=self._model,
-                        contents=gemini_contents,
-                        config=config,
-                    ),
-                    timeout=self._timeout,
-                )
+        for current_model in models_to_try:
+            for attempt in range(_MAX_RETRIES):
+                try:
+                    response = await asyncio.wait_for(
+                        client.aio.models.generate_content_stream(
+                            model=current_model,
+                            contents=gemini_contents,
+                            config=config,
+                        ),
+                        timeout=self._timeout,
+                    )
 
-                async for chunk in response:
-                    if chunk.text:
-                        yield chunk.text
+                    has_chunk = False
+                    async for chunk in response:
+                        if chunk.text:
+                            has_chunk = True
+                            yield chunk.text
 
-                return
+                    if has_chunk:
+                        return
 
-            except asyncio.TimeoutError:
-                last_error = TimeoutError(
-                    f"Gemini API stream timed out after {self._timeout}s"
-                )
-                logger.warning(
-                    "Gemini stream timeout on attempt %d/%d", attempt + 1, _MAX_RETRIES
-                )
-            except Exception as e:
-                last_error = e
-                err_str = str(e).lower()
-                is_transient = any(
-                    kw in err_str
-                    for kw in ("rate limit", "quota", "503", "500", "overloaded", "resource")
-                )
-                if not is_transient:
-                    raise
-                logger.warning(
-                    "Gemini stream transient error on attempt %d/%d: %s",
-                    attempt + 1, _MAX_RETRIES, e,
-                )
+                except asyncio.TimeoutError:
+                    last_error = TimeoutError(
+                        f"Gemini API stream timed out after {self._timeout}s on {current_model}"
+                    )
+                    logger.warning(
+                        "Gemini stream timeout on attempt %d/%d (model=%s)", attempt + 1, _MAX_RETRIES, current_model
+                    )
+                except Exception as e:
+                    last_error = e
+                    err_str = str(e).lower()
+                    is_transient = any(
+                        kw in err_str
+                        for kw in ("rate limit", "quota", "503", "500", "overloaded", "resource", "not_found", "404")
+                    )
+                    logger.warning(
+                        "Gemini stream error on attempt %d/%d (model=%s): %s",
+                        attempt + 1, _MAX_RETRIES, current_model, e,
+                    )
+                    if not is_transient:
+                        break  # Try next model
 
-            if attempt < _MAX_RETRIES - 1:
-                await asyncio.sleep(_RETRY_DELAYS[attempt])
+                if attempt < _MAX_RETRIES - 1:
+                    await asyncio.sleep(_RETRY_DELAYS[attempt])
 
-        raise last_error or RuntimeError("Gemini LLM stream failed after all retries")
+        raise last_error or RuntimeError("Gemini LLM stream failed after all retries and fallbacks")
 
     def _build_config(
         self,

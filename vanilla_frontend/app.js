@@ -488,8 +488,8 @@ async function loadEvaluationResults() {
     try {
         const headers = await getAuthHeaders();
         const [resultsResponse, experimentsResponse] = await Promise.all([
-            fetch(`${API_BASE}/api/v1/evaluation/results`, { headers, credentials: 'same-origin' }),
-            fetch(`${API_BASE}/api/v1/evaluation/experiments`, { headers, credentials: 'same-origin' }),
+            fetch(`${API_BASE}/api/v1/evaluation/results`, { headers, credentials: 'include' }),
+            fetch(`${API_BASE}/api/v1/evaluation/experiments`, { headers, credentials: 'include' }),
         ]);
         if (!resultsResponse.ok) throw new Error('Evaluation results unavailable');
         renderEvaluationResults(await resultsResponse.json());
@@ -506,7 +506,7 @@ async function loadUsageSummary(headers = null) {
         const authHeaders = headers || await getAuthHeaders();
         const response = await fetch(`${API_BASE}/api/v1/usage/summary?days=30`, {
             headers: authHeaders,
-            credentials: 'same-origin',
+            credentials: 'include',
         });
         if (!response.ok) throw new Error('Usage data unavailable');
         const usage = await response.json();
@@ -608,7 +608,11 @@ function initFeatureCards() {
 // ── Conversations ──────────────────────────────────────────
 async function loadConversations() {
     try {
-        const response = await fetch(`${API_BASE}/api/v1/conversations/?limit=50`);
+        const headers = await getAuthHeaders();
+        const response = await fetch(`${API_BASE}/api/v1/conversations/?limit=50`, {
+            headers,
+            credentials: 'include',
+        });
         if (!response.ok) return;
         const data = await response.json();
         state.conversations = data.conversations || [];
@@ -777,7 +781,11 @@ async function loadConversation(conversationId) {
     `;
 
     try {
-        const response = await fetch(`${API_BASE}/api/v1/conversations/${conversationId}`);
+        const headers = await getAuthHeaders();
+        const response = await fetch(`${API_BASE}/api/v1/conversations/${conversationId}`, {
+            headers,
+            credentials: 'include',
+        });
         if (!response.ok) throw new Error('Failed to load conversation');
         const conv = await response.json();
 
@@ -864,7 +872,12 @@ async function deleteConversation(conversationId) {
     if (!confirm('Delete this conversation and all messages?')) return;
 
     try {
-        await fetch(`${API_BASE}/api/v1/conversations/${conversationId}`, { method: 'DELETE' });
+        const headers = await getAuthHeaders();
+        await fetch(`${API_BASE}/api/v1/conversations/${conversationId}`, {
+            method: 'DELETE',
+            headers,
+            credentials: 'include',
+        });
         if (state.activeConversationId === conversationId) {
             startNewChat();
         }
@@ -1064,7 +1077,7 @@ async function uploadFile(file) {
         const response = await fetch(`${API_BASE}/api/v1/documents/upload`, {
             method: 'POST',
             headers: headers,
-            credentials: 'same-origin',
+            credentials: 'include',
             body: formData,
         });
 
@@ -1112,7 +1125,7 @@ async function pollDocumentStatus(docId, tempId) {
             const headers = await getAuthHeaders();
             const response = await fetch(`${API_BASE}/api/v1/documents/${docId}`, {
                 headers: headers,
-                credentials: 'same-origin',
+                credentials: 'include',
             });
             if (response.ok) {
                 const doc = await response.json();
@@ -1165,7 +1178,7 @@ async function loadDocuments() {
         const headers = await getAuthHeaders();
         const response = await fetch(`${API_BASE}/api/v1/documents/`, {
             headers: headers,
-            credentials: 'same-origin',
+            credentials: 'include',
         });
         if (!response.ok) return;
         const data = await response.json();
@@ -1238,7 +1251,7 @@ async function retryDocument(docId, event) {
         const response = await fetch(`${API_BASE}/api/v1/documents/${docId}/retry`, {
             method: 'POST',
             headers,
-            credentials: 'same-origin',
+            credentials: 'include',
         });
         if (!response.ok) {
             const detail = await response.json().catch(() => ({}));
@@ -1291,7 +1304,7 @@ async function deleteDocument(docId, event) {
         await fetch(`${API_BASE}/api/v1/documents/${docId}`, {
             method: 'DELETE',
             headers: headers,
-            credentials: 'same-origin',
+            credentials: 'include',
         });
         showToast('Document deleted', 'info');
         state.selectedDocIds = state.selectedDocIds.filter(id => id !== docId);
