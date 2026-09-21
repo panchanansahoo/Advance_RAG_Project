@@ -22,7 +22,7 @@ jobs:
 
       - name: Check Paths for Changes
         id: changes
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@v4
         with:
           filters: |
             backend:
