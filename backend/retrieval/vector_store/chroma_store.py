@@ -92,10 +92,18 @@ class ChromaVectorStore(BaseVectorStore):
 
         where_filter = None
         if filters:
-            # ChromaDB uses {"key": {"$eq": "value"}} format
+            # ChromaDB uses {"key": {"$eq": "value"}} or {"key": {"$in": [...]}} format
             conditions = {}
             for k, v in filters.items():
-                conditions[k] = {"$eq": str(v)}
+                if isinstance(v, list):
+                    # Use $in for list-valued filters (e.g. multiple document_ids)
+                    str_values = [str(item) for item in v]
+                    if len(str_values) == 1:
+                        conditions[k] = {"$eq": str_values[0]}
+                    else:
+                        conditions[k] = {"$in": str_values}
+                else:
+                    conditions[k] = {"$eq": str(v)}
             where_filter = conditions if len(conditions) == 1 else {"$and": [
                 {k: v} for k, v in conditions.items()
             ]}
