@@ -1,4 +1,4 @@
-name: CI/CD - Deploy to Render & Vercel
+name: CI/CD - Deploy to Render
 
 on:
   push:
@@ -16,7 +16,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       backend: ${{ steps.changes.outputs.backend }}
-      frontend: ${{ steps.changes.outputs.frontend }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -33,10 +32,6 @@ jobs:
               - 'render.yaml'
               - 'pyproject.toml'
               - '.github/workflows/deploy.yml'
-            frontend:
-              - 'vanilla_frontend/**'
-              - 'vercel.json'
-              - '.github/workflows/deploy.yml'
 
   deploy-backend:
     name: Deploy Backend to Render
@@ -49,10 +44,11 @@ jobs:
           RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
         run: |
           if [ -z "$RENDER_DEPLOY_HOOK" ]; then
-            echo "::error::RENDER_DEPLOY_HOOK_URL secret is not set."
-            echo "To fix: Go to GitHub Repo -> Settings -> Secrets and variables -> Actions -> New repository secret."
-            echo "Add RENDER_DEPLOY_HOOK_URL with your Render Deploy Hook URL."
-            exit 1
+            echo "::warning::RENDER_DEPLOY_HOOK_URL secret is not set. Skipping Render backend deployment."
+            echo "To enable automated Render deployment:"
+            echo "  1. Go to GitHub Repo -> Settings -> Secrets and variables -> Actions"
+            echo "  2. Add RENDER_DEPLOY_HOOK_URL with your Render Deploy Hook URL"
+            exit 0
           fi
 
           echo "Triggering Render deployment..."
@@ -68,48 +64,3 @@ jobs:
             echo "Response: $BODY"
             exit 1
           fi
-
-  deploy-frontend:
-    name: Deploy Frontend to Vercel
-    needs: [filter]
-    if: needs.filter.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    env:
-      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Verify Vercel Secrets
-        id: verify_vercel_secrets
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: |
-          if [ -z "$VERCEL_TOKEN" ] || [ -z "$VERCEL_ORG_ID" ] || [ -z "$VERCEL_PROJECT_ID" ]; then
-            echo "::warning::Missing Vercel secrets. Skipping frontend deployment."
-            echo "Please configure the following in GitHub Repo -> Settings -> Secrets and variables -> Actions:"
-            echo "  - VERCEL_TOKEN"
-            echo "  - VERCEL_ORG_ID"
-            echo "  - VERCEL_PROJECT_ID"
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          echo "ready=true" >> "$GITHUB_OUTPUT"
-          echo "All Vercel credentials are present."
-
-      - name: Install Vercel CLI
-        if: steps.verify_vercel_secrets.outputs.ready == 'true'
-        run: npm install --global vercel@latest
-
-      - name: Pull Vercel Environment Configuration
-        if: steps.verify_vercel_secrets.outputs.ready == 'true'
-        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
-
-      - name: Build Project Artifacts
-        if: steps.verify_vercel_secrets.outputs.ready == 'true'
-        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
-
-      - name: Deploy to Vercel Production
-        if: steps.verify_vercel_secrets.outputs.ready == 'true'
-        run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
