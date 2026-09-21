@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 class GeminiVLM(BaseVLM):
     """VLM implementation using Google Gemini Vision."""
 
-    def __init__(self, model_name: str = "gemini-1.5-flash", api_key: Optional[str] = None):
+    def __init__(self, model_name: str = "gemini-3.6-flash", api_key: Optional[str] = None):
         """
         Args:
             model_name: The Gemini model to use.

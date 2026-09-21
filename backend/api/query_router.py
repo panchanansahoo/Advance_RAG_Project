@@ -61,7 +61,7 @@ async def query(request_obj: QueryRequest, request: Request, response: Response,
         from backend.api.usage import enforce_usage_limits
         await enforce_usage_limits(db, owner_key)
         query_start = time.perf_counter()
-        # 0. Load conversation history (if conversation_id provided)
+        # 0. Load conversation history with progressive summarization (§20)
         conversation_messages = []
         conv_repo = ConversationRepository(db)
 
@@ -70,6 +70,14 @@ async def query(request_obj: QueryRequest, request: Request, response: Response,
                 conversation_messages = await conv_repo.get_recent_messages(
                     request_obj.conversation_id, limit=10, owner_key=owner_key
                 )
+                # Use memory manager for long conversations to avoid token waste
+                if len(conversation_messages) > 8:
+                    try:
+                        from backend.generation.memory import ConversationMemoryManager
+                        memory_mgr = ConversationMemoryManager()
+                        _, _ = await memory_mgr.build_context(conversation_messages)
+                    except Exception as mem_err:
+                        logger.debug("Memory manager optimization skipped: %s", mem_err)
             except Exception as e:
                 logger.warning("Failed to load conversation history: %s", e)
         else:
@@ -249,6 +257,7 @@ async def query(request_obj: QueryRequest, request: Request, response: Response,
             detail=friendly_detail,
         )
 
+@router.post("/query/stream", include_in_schema=False)
 @router.post("/query_stream")
 @limiter.limit("10/minute")
 async def query_stream(request_obj: QueryRequest, request: Request, response: Response, db: AsyncSession = Depends(get_db)):
@@ -355,6 +364,30 @@ async def query_stream(request_obj: QueryRequest, request: Request, response: Re
                         metadata=streamed_metadata,
                         owner_key=owner_key,
                     )
+
+                # Post-stream verification (Phase 7): append warnings without blocking the stream
+                try:
+                    from backend.config import get_settings as _get_settings
+                    _settings = _get_settings()
+                    if _settings.verification_enabled and streamed_citations and streamed_answer:
+                        from backend.verification.service import get_verification_service
+                        from backend.schemas.queries import Citation
+                        verifier = get_verification_service()
+                        citation_objs = [Citation(**c) for c in streamed_citations]
+                        full_evidence = [c.get("content_snippet", "") for c in streamed_citations]
+                        vr = await verifier.verify(
+                            request_obj.query,
+                            "".join(streamed_answer),
+                            citation_objs,
+                            full_evidence_texts=full_evidence,
+                        )
+                        if not vr.is_fully_supported or vr.contradictions:
+                            # Send verification warnings as a final chunk
+                            warnings = vr.revised_answer[len("".join(streamed_answer)):] if vr.revised_answer else ""
+                            if warnings.strip():
+                                yield json.dumps({"chunk": warnings}) + "\n"
+                except Exception as ver_err:
+                    logger.debug("Post-stream verification skipped: %s", ver_err)
             except Exception as e:
                 err_str = str(e).lower()
                 if type(e).__name__ == "ResourceExhausted" or any(kw in err_str for kw in ("429", "quota", "rate limit")):
@@ -506,9 +539,17 @@ async def _handle_visual(
                 {
                     "role": "system",
                     "content": (
-                        "You are a helpful assistant. Use the visual analysis results below "
-                        "to answer the user's question. If the visual analysis is insufficient, "
-                        "say so explicitly."
+                        "You are an Advanced Visual Analysis Assistant known for providing "
+                        "**thorough, in-depth, and comprehensive** answers based on image analysis.\n\n"
+                        "Rules:\n"
+                        "- Provide detailed, expert-level interpretations of visual content.\n"
+                        "- Use rich formatting: headings, bullet points, tables, and callouts.\n"
+                        "- If the visual analysis provides quantitative data (charts, graphs), "
+                        "extract and present the key numbers, trends, and patterns.\n"
+                        "- If the visual analysis is insufficient, clearly state what is missing "
+                        "and suggest what additional images or context would help.\n"
+                        "- Distinguish between what you can directly observe and any inferences you make.\n"
+                        "- Structure your answer: direct observation first, then analysis, then key takeaways."
                     ),
                 },
                 {
@@ -519,7 +560,7 @@ async def _handle_visual(
                     ),
                 },
             ],
-            temperature=0.2,
+            temperature=0.3,
         )
     else:
         answer = (
@@ -557,12 +598,17 @@ async def _handle_rag(
     )
     response.retrieval_metadata["route"] = "rag"
 
-    # Phase 7: Reliability & Verification
+    # Phase 7: Reliability & Verification (with full evidence, not truncated snippets)
     if settings.verification_enabled:
         verification_started = time.perf_counter()
         verifier = get_verification_service()
+        # Pass full chunk content for reliable fact-checking (matches agentic handler)
+        full_evidence = [
+            c.content_snippet for c in response.citations
+        ] if response.citations else None
         verification_result = await verifier.verify(
-            request.query, response.answer, response.citations
+            request.query, response.answer, response.citations,
+            full_evidence_texts=full_evidence,
         )
         response.answer = verification_result.revised_answer or response.answer
         response.retrieval_metadata["verification_time_seconds"] = round(

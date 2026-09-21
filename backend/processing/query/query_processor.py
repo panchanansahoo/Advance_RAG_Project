@@ -113,13 +113,15 @@ class QueryProcessor:
         except Exception as e:
             logger.warning("Language detection failed: %s", e)
 
-        # Step 2: Intent Classification (Task 3.2)
-        try:
-            result.intent = await self._classify_intent(query)
-            result.metadata["intent"] = result.intent
-            logger.info("Classified intent: %s", result.intent)
-        except Exception as e:
-            logger.warning("Intent classification failed: %s", e)
+        # Step 2: Intent Classification — skipped to reduce latency.
+        # The QueryRouter already classifies queries for routing decisions.
+        # To re-enable, uncomment the block below.
+        # try:
+        #     result.intent = await self._classify_intent(query)
+        #     result.metadata["intent"] = result.intent
+        #     logger.info("Classified intent: %s", result.intent)
+        # except Exception as e:
+        #     logger.warning("Intent classification failed: %s", e)
 
         # Step 3: Query Rewriting
         if rewrite:

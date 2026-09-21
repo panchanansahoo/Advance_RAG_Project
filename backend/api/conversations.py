@@ -55,6 +55,7 @@ class ConversationListOut(BaseModel):
 
 # ── Endpoints ───────────────────────────────────────────────
 
+@router.post("", response_model=ConversationOut, status_code=201, include_in_schema=False)
 @router.post("/", response_model=ConversationOut, status_code=201)
 async def create_conversation(
     body: ConversationCreate,
@@ -73,6 +74,7 @@ async def create_conversation(
     )
 
 
+@router.get("", response_model=ConversationListOut, include_in_schema=False)
 @router.get("/", response_model=ConversationListOut)
 async def list_conversations(
     request: Request,

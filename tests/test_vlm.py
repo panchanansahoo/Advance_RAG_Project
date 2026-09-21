@@ -28,7 +28,7 @@ class TestGeminiVLM:
         assert result == "A beautiful sunset over the mountains."
         mock_client.models.generate_content.assert_called_once()
         call = mock_client.models.generate_content.call_args
-        assert call.kwargs["model"] == "gemini-1.5-flash"
+        assert call.kwargs["model"] == vlm.model_name
         assert "What is this?" in call.kwargs["contents"][0]
 
     @patch("backend.processing.vlm.gemini_vlm.genai")

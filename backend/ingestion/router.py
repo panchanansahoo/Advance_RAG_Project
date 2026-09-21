@@ -130,6 +130,7 @@ async def upload_document(
     )
 
 
+@router.get("", response_model=DocumentListResponse, include_in_schema=False)
 @router.get("/", response_model=DocumentListResponse)
 async def list_documents(
     request: Request,

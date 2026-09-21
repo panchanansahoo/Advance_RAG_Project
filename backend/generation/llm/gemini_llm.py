@@ -24,7 +24,7 @@ class GeminiLLM(BaseLLM):
     def __init__(
         self,
         api_key: str,
-        model: str = "gemini-2.0-flash",
+        model: str = "gemini-3.6-flash",
         temperature: float = 0.1,
         max_tokens: int = 2048,
         timeout: float = _DEFAULT_TIMEOUT,
@@ -55,24 +55,25 @@ class GeminiLLM(BaseLLM):
         # Separate system instruction from conversation messages
         system_parts, conversation = self._split_system_messages(messages)
 
-        # Convert remaining messages to Gemini format
-        gemini_prompt = self._convert_messages(conversation)
-        if system_parts:
-            # Prepend system instructions as context
-            gemini_prompt = f"System instructions: {' '.join(system_parts)}\n\n{gemini_prompt}"
+        # Convert remaining messages to Gemini Content objects
+        gemini_contents = self._convert_to_contents(conversation)
+
+        # Build config with native system instruction
+        config = self._build_config(
+            system_parts=system_parts,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            **kwargs,
+        )
 
         last_error: Optional[Exception] = None
         for attempt in range(_MAX_RETRIES):
             try:
-                from google.genai import types
                 response = await asyncio.wait_for(
                     client.aio.models.generate_content(
                         model=self._model,
-                        contents=gemini_prompt,
-                        config=types.GenerateContentConfig(
-                            temperature=temperature or self._temperature,
-                            max_output_tokens=max_tokens or self._max_tokens,
-                        ),
+                        contents=gemini_contents,
+                        config=config,
                     ),
                     timeout=self._timeout,
                 )
@@ -85,7 +86,8 @@ class GeminiLLM(BaseLLM):
                     "total_tokens": getattr(usage, "total_token_count", 0),
                 } if usage else {}
                 # Rough token estimate for tracking (Gemini doesn't always expose usage)
-                self._total_tokens_used += len(result) // 4 + len(gemini_prompt) // 4
+                prompt_text = " ".join(m.get("content", "") for m in messages)
+                self._total_tokens_used += len(result) // 4 + len(prompt_text) // 4
                 logger.info("Gemini response: model=%s, attempt=%d", self._model, attempt + 1)
                 return result
 
@@ -127,22 +129,23 @@ class GeminiLLM(BaseLLM):
         client = self._get_client()
 
         system_parts, conversation = self._split_system_messages(messages)
-        gemini_prompt = self._convert_messages(conversation)
-        if system_parts:
-            gemini_prompt = f"System instructions: {' '.join(system_parts)}\n\n{gemini_prompt}"
+        gemini_contents = self._convert_to_contents(conversation)
+
+        config = self._build_config(
+            system_parts=system_parts,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            **kwargs,
+        )
 
         last_error: Optional[Exception] = None
         for attempt in range(_MAX_RETRIES):
             try:
-                from google.genai import types
                 response = await asyncio.wait_for(
                     client.aio.models.generate_content_stream(
                         model=self._model,
-                        contents=gemini_prompt,
-                        config=types.GenerateContentConfig(
-                            temperature=temperature or self._temperature,
-                            max_output_tokens=max_tokens or self._max_tokens,
-                        ),
+                        contents=gemini_contents,
+                        config=config,
                     ),
                     timeout=self._timeout,
                 )
@@ -179,6 +182,33 @@ class GeminiLLM(BaseLLM):
 
         raise last_error or RuntimeError("Gemini LLM stream failed after all retries")
 
+    def _build_config(
+        self,
+        system_parts: List[str],
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        **kwargs,
+    ):
+        """Build GenerateContentConfig with native system_instruction and JSON support."""
+        from google.genai import types
+
+        config_kwargs = {
+            "temperature": temperature or self._temperature,
+            "max_output_tokens": max_tokens or self._max_tokens,
+        }
+
+        # Native system instruction — Gemini properly enforces these
+        if system_parts:
+            config_kwargs["system_instruction"] = "\n\n".join(system_parts)
+
+        # JSON response format support — critical for router, agent planner, decomposer
+        response_format = kwargs.get("response_format")
+        if response_format and isinstance(response_format, dict):
+            if response_format.get("type") == "json_object":
+                config_kwargs["response_mime_type"] = "application/json"
+
+        return types.GenerateContentConfig(**config_kwargs)
+
     @staticmethod
     def _split_system_messages(
         messages: List[Dict[str, str]],
@@ -194,20 +224,31 @@ class GeminiLLM(BaseLLM):
         return system_parts, conversation
 
     @staticmethod
-    def _convert_messages(messages: List[Dict[str, str]]) -> str:
+    def _convert_to_contents(messages: List[Dict[str, str]]) -> list:
         """
-        Convert OpenAI-style messages to a single prompt string
-        that Gemini can consume.
+        Convert OpenAI-style messages to Gemini Content objects.
+
+        Uses structured Content/Part objects for proper multi-turn conversation
+        handling, instead of flattening to a single string.
         """
-        parts = []
+        from google.genai import types
+
+        contents = []
         for msg in messages:
             role = msg.get("role", "user")
             content = msg.get("content", "")
-            if role == "user":
-                parts.append(f"User: {content}\n\n")
-            elif role == "assistant":
-                parts.append(f"Assistant: {content}\n\n")
-        return "".join(parts)
+
+            # Gemini uses "user" and "model" roles (not "assistant")
+            gemini_role = "model" if role == "assistant" else "user"
+
+            contents.append(
+                types.Content(
+                    role=gemini_role,
+                    parts=[types.Part(text=content)],
+                )
+            )
+
+        return contents
 
     @property
     def model_name(self) -> str:

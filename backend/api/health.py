@@ -64,9 +64,10 @@ async def health_check(db: AsyncSession = Depends(get_db)):
         from backend.retrieval.vector_store import get_vector_store
 
         vs = get_vector_store()
-        # ChromaDB and Qdrant both support a lightweight operation
-        # to verify connectivity without heavy queries.
-        if hasattr(vs, "_client"):
+        if hasattr(vs, "_get_client"):
+            vs._get_client().heartbeat()
+            checks["vector_store"] = "ok"
+        elif hasattr(vs, "_client") and vs._client is not None:
             # ChromaDB: heartbeat or list_collections
             vs._client.heartbeat()
             checks["vector_store"] = "ok"

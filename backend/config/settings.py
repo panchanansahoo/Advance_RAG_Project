@@ -162,7 +162,7 @@ class Settings(BaseSettings):
     # ── LLM ─────────────────────────────────────────────────
     llm_provider: str = "openai"
     llm_model: str = "gpt-4o-mini"
-    llm_temperature: float = 0.1
+    llm_temperature: float = 0.3
     llm_max_tokens: int = 2048
 
     # ── API Keys ────────────────────────────────────────────
@@ -247,7 +247,7 @@ class Settings(BaseSettings):
 
     # ── Context Compression (Phase 2) ──────────────────────
     context_compression_enabled: bool = True
-    max_context_tokens: int = 6000  # Max tokens sent to LLM
+    max_context_tokens: int = 12000  # Max tokens sent to LLM
 
     # ── Multimodal Processing (Phase 3) ────────────────────
     ocr_enabled: bool = True

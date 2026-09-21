@@ -44,7 +44,7 @@ class HybridSearchTool:
             chunks = await asyncio.wait_for(
                 self.retrieval_service.retrieve_chunks(
                     query=query,
-                    top_k=5,
+                    top_k=None,  # Uses settings.retrieval_top_k
                     document_ids=document_ids,
                     owner_key=owner_key,
                 ),

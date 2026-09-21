@@ -35,7 +35,7 @@ class ContextCompressor:
     and improve LLM answer quality by removing noise.
     """
 
-    def __init__(self, max_tokens: int = 3000, similarity_threshold: float = 0.85):
+    def __init__(self, max_tokens: int = 8000, similarity_threshold: float = 0.85):
         """
         Args:
             max_tokens: Maximum approximate tokens for the compressed context.

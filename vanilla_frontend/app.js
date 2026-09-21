@@ -1709,7 +1709,20 @@ function formatMarkdown(text) {
 
     if (typeof marked !== 'undefined') {
         try {
-            marked.setOptions({ gfm: true, breaks: true, headerIds: false, mangle: false });
+            const markedOptions = { gfm: true, breaks: true, headerIds: false, mangle: false };
+
+            // Wire up highlight.js for syntax-highlighted code blocks
+            if (typeof hljs !== 'undefined') {
+                markedOptions.highlight = function(code, lang) {
+                    if (lang && hljs.getLanguage(lang)) {
+                        try { return hljs.highlight(code, { language: lang }).value; } catch (_) {}
+                    }
+                    try { return hljs.highlightAuto(code).value; } catch (_) {}
+                    return code;
+                };
+            }
+
+            marked.setOptions(markedOptions);
 
             let html = marked.parse(text);
 
@@ -1724,6 +1737,15 @@ function formatMarkdown(text) {
             );
 
             html = html.replace(/<blockquote>\s*<p>\s*💡/g, '<blockquote class="callout callout-tip"><p>💡');
+
+            // Post-process: highlight any code blocks that weren't caught by the renderer
+            if (typeof hljs !== 'undefined') {
+                setTimeout(() => {
+                    document.querySelectorAll('pre code:not(.hljs)').forEach(block => {
+                        hljs.highlightElement(block);
+                    });
+                }, 0);
+            }
 
             return html;
         } catch (e) {

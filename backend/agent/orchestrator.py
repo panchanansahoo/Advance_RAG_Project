@@ -303,12 +303,20 @@ class AgentOrchestrator:
 
         # Build conversation history
         messages = [{"role": "system", "content": system_prompt}]
+
+        # Include resolved sub-answers so the planner avoids redundant searches
+        sub_answer_context = ""
+        if state.sub_answers:
+            sa_parts = [f"- {sq}: {sa[:500]}" for sq, sa in state.sub_answers.items()]
+            sub_answer_context = f"\n\nAlready-Resolved Sub-Answers:\n" + "\n".join(sa_parts)
+
         messages.append(
             {
                 "role": "user",
                 "content": (
                     f"Original Query: {state.original_query}\n"
                     f"Current Sub-Question: {current_q}"
+                    f"{sub_answer_context}"
                 ),
             }
         )
@@ -321,7 +329,7 @@ class AgentOrchestrator:
                     "content": f"Tool Called: {step.tool}\nQuery: {step.query}{confidence_tag}",
                 }
             )
-            truncated_obs = _smart_truncate(step.observation, max_chars=2000)
+            truncated_obs = _smart_truncate(step.observation, max_chars=4000)
             messages.append(
                 {"role": "user", "content": f"Observation {idx + 1}:\n{truncated_obs}"}
             )
@@ -468,7 +476,7 @@ class AgentOrchestrator:
                     {"role": "user", "content": user_prompt},
                 ],
                 temperature=0.2,
-                max_tokens=4096,
+                max_tokens=8192,
             )
             return response
         except Exception as e:
